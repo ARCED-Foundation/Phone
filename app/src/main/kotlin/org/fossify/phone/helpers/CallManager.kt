@@ -354,7 +354,12 @@ interface CallManagerListener {
 
 // Helper function to extract phone number from call details
 private fun getPhoneNumber(call: Call): String {
-    return call.details.handle?.toString() ?: "Unknown"
+    return cleanPhoneNumber(call.details.handle?.toString() ?: "Unknown")
+}
+
+// Helper function to clean phone numbers by removing tel: prefix
+private fun cleanPhoneNumber(number: String): String {
+    return number.replace("tel:", "")
 }
 
 // Helper function to determine if a call is outgoing
@@ -364,12 +369,10 @@ private fun isCallOutgoing(call: Call): Boolean {
     val handle = call.details.handle?.toString() ?: ""
 
     // Outgoing calls typically start in DIALING/CONNECTING state
-    // and usually don't have tel: URI scheme
     val isDialingOrConnecting = callState == Call.STATE_DIALING || callState == Call.STATE_CONNECTING
-    val isNotIncomingUri = !handle.startsWith("tel:")
 
     // Use the reliable method first (state-based)
-    return isDialingOrConnecting && isNotIncomingUri
+    return isDialingOrConnecting
 }
 
 sealed class PhoneState

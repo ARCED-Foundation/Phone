@@ -582,7 +582,8 @@ class DialpadActivity : SimpleActivity() {
                 "No calls made"
             } else {
                 odkCallLog.joinToString(" | ") { call ->
-                    "${call.direction}: ${call.number}; Duration: ${String.format("%.2f", call.duration)}s"
+                    val cleanDuration = String.format("%.2f", call.duration)
+                    "${call.direction}: ${call.number}; Duration: $cleanDuration"
                 }
             }
 
