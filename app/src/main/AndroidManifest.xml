@@ -151,6 +151,12 @@
 
                 <data android:scheme="tel" />
             </intent-filter>
+
+            <!-- ODK Collect integration -->
+            <intent-filter>
+                <action android:name="org.fossify.phone.debug" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <activity

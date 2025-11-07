@@ -815,6 +815,28 @@ class CallActivity : SimpleActivity() {
             updateCallContactInfo(call)
             updateState()
         }
+
+        // ODK integration methods - empty implementations for CallActivity
+        override fun onCallStarted(number: String, isOutgoing: Boolean) {
+            // CallActivity doesn't need to handle ODK call tracking
+        }
+
+        override fun onCallActive(number: String, isOutgoing: Boolean) {
+            // CallActivity doesn't need to handle ODK call tracking
+        }
+
+        override fun onCallEnded() {
+            // CallActivity doesn't need to handle ODK call tracking
+        }
+
+        // Enhanced ODK integration methods - empty implementations for CallActivity
+        override fun onCallStarted(call: Call, number: String, isOutgoing: Boolean) {
+            // CallActivity doesn't need to handle ODK call tracking
+        }
+
+        override fun onCallActive(call: Call, number: String, isOutgoing: Boolean) {
+            // CallActivity doesn't need to handle ODK call tracking
+        }
     }
 
     private val updateCallDurationTask = object : Runnable {

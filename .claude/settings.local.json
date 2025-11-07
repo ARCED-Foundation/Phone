@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew clean assembleDebug)",
+      "Bash(JAVA_HOME=\"C:\\Program Files\\Android\\Android Studio\\jbr\" ./gradlew clean assembleDebug)",
+      "Bash(git checkout -b odk-integration)",
+      "Bash(git checkout main)",
+      "Bash(git reset --hard origin/main)",
+      "Bash(git checkout odk-integration)",
+      "Bash(git stash)",
+      "Bash(./gradlew:*)",
+      "Bash(cp:*)",
+      "Bash(/tmp/part1.txt)",
+      "Bash(/tmp/part2.txt)",
+      "Bash(cat:*)",
+      "Bash(xargs:*)",
+      "Bash(find:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -21,6 +21,22 @@
 
     </org.fossify.commons.views.MyAppBarLayout>
 
+    <!-- ODK Mode Indicator -->
+    <TextView
+        android:id="@+id/odk_mode_indicator"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="📋 ODK Data Collection Mode - Calls Being Logged"
+        android:background="#4CAF50"
+        android:textColor="#FFFFFF"
+        android:padding="12dp"
+        android:gravity="center"
+        android:textStyle="bold"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/dialpad_holder"
         android:layout_width="match_parent"
@@ -131,6 +147,20 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent" />
+
+        <!-- Finish &amp; Return to ODK Button -->
+        <Button
+            android:id="@+id/finish_odk_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Finish &amp; Return to ODK Collect"
+            android:background="#4CAF50"
+            android:textColor="#FFFFFF"
+            android:visibility="gone"
+            android:layout_margin="@dimen/activity_margin"
+            app:layout_constraintBottom_toTopOf="@+id/dialpad_wrapper"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
