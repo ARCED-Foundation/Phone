@@ -138,13 +138,13 @@
             android:id="@+id/dialpad_call_button"
             android:layout_width="@dimen/dialpad_button_size"
             android:layout_height="@dimen/dialpad_button_size"
-            android:layout_marginBottom="@dimen/activity_margin"
+            android:layout_marginBottom="@dimen/medium_margin"
             android:background="@drawable/circle_button_background_ripple"
             android:contentDescription="@string/call_number"
             android:elevation="@dimen/small_margin"
             android:padding="@dimen/normal_margin"
             android:src="@drawable/ic_phone_vector"
-            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintBottom_toTopOf="@+id/finish_odk_button"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent" />
 
@@ -158,7 +158,7 @@
             android:textColor="#FFFFFF"
             android:visibility="gone"
             android:layout_margin="@dimen/activity_margin"
-            app:layout_constraintBottom_toTopOf="@+id/dialpad_wrapper"
+            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />
 
