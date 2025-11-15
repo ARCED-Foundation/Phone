@@ -14,7 +14,9 @@
       "Bash(/tmp/part2.txt)",
       "Bash(cat:*)",
       "Bash(xargs:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git log:*)",
+      "Bash(aapt dump:*)"
     ],
     "deny": [],
     "ask": []

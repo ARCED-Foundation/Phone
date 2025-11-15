@@ -1,6 +1,6 @@
 # ODK Collect Integration for Fossify Phone App
 
-## ⚠️ Implementation Status: COMPLETED ✅ (LATEST FIXES APPLIED 2025-11-09)
+## ⚠️ Implementation Status: COMPLETED ✅ (LATEST FIXES APPLIED 2025-11-15)
 
 ### What Has Been Implemented
 
@@ -26,7 +26,7 @@ Out: +123456789; Duration: 15.25s | In: +098765432; Duration: 8.50s
 
 #### ✅ Build Status
 - **All compilation errors resolved**
-- **BUILD SUCCESSFUL** across all variants (coreDebug, fossDebug, gplayDebug)
+- **BUILD SUCCESSFUL** across all variants (coreDebug, coreRelease, fossDebug, gplayDebug)
 - **Ready for testing** with ODK Collect forms
 
 ### Key Issues Resolved
@@ -37,6 +37,8 @@ Out: +123456789; Duration: 15.25s | In: +098765432; Duration: 8.50s
 4. **Data Format**: Updated to clean format without double underscores
 5. **"No Calls Made" Bug**: **RESOLVED** - Fixed timestamp-based call ID generation creating race conditions
 6. **Call Duration/Disconnection Issues**: **RESOLVED** - Call object-based tracking ensures accurate duration calculation
+7. **Release Variant Intent Handling**: **RESOLVED** - Fixed hardcoded debug action check that prevented coreRelease from receiving phone numbers
+8. **Multi-Variant Support**: **RESOLVED** - Added support for both `org.fossify.phone.debug` and `org.fossify.phone` intent actions
 
 ---
 
@@ -51,11 +53,18 @@ This document provides complete implementation requirements for integrating the 
 - **Documentation**: [ODK Collect External Apps Documentation](https://docs.getodk.org/collect-external-apps/)
 
 ### Use Case Flow
+**For Debug Variant:**
 1. ODK Collect form field triggers Fossify Phone with appearance: `ex:org.fossify.phone.debug(phone='01715418546')`
-2. Fossify Phone launches with the phone number pre-filled in dialpad
+2. Fossify Phone (coreDebug) launches with the phone number pre-filled in dialpad
+
+**For Release Variant:**
+1. ODK Collect form field triggers Fossify Phone with appearance: `ex:org.fossify.phone(phone='01715418546')`
+2. Fossify Phone (coreRelease) launches with the phone number pre-filled in dialpad
+
+**Common Flow:**
 3. User makes one or more calls through Fossify Phone
 4. User completes data collection session
-5. Fossify Phone automatically formats call data and returns to ODK Collect via Intent ClipData
+5. Fossify Phone automatically formats call data and returns to ODK Collect via Intent String extra
 6. ODK Collect receives and stores the formatted call log string
 
 ### Expected Data Format
@@ -73,24 +82,33 @@ Out: +880176565665; Duration: 103.05s | In: +880176765665; Duration: 60.5s
 #### 1.1 Declare Custom Intent Filter
 **File**: `app/src/main/AndroidManifest.xml`
 
-Add intent filter to the DialpadActivity (or main activity that handles dialing):
+Add intent filters to the DialpadActivity (or main activity that handles dialing):
 
 ```xml
 <activity android:name=".activities.DialpadActivity">
     <!-- Existing intent filters -->
-    
-    <!-- Add ODK Collect integration -->
+
+    <!-- ODK Collect integration for debug variant -->
     <intent-filter>
         <action android:name="org.fossify.phone.debug" />
+        <category android:name="android.intent.category.DEFAULT" />
+    </intent-filter>
+
+    <!-- ODK Collect integration for release variant -->
+    <intent-filter>
+        <action android:name="org.fossify.phone" />
         <category android:name="android.intent.category.DEFAULT" />
     </intent-filter>
 </activity>
 ```
 
-**Note**: The action `org.fossify.phone.debug` matches the appearance syntax used in ODK forms.
+**Note**:
+- The action `org.fossify.phone.debug` matches the appearance syntax for debug builds
+- The action `org.fossify.phone` matches the appearance syntax for release builds
+- Both variants are supported simultaneously
 
 #### 1.2 Parse Incoming Intent Parameters
-**File**: `app/src/main/java/.../activities/DialpadActivity.kt`
+**File**: `app/src/main/kotlin/org/fossify/phone/activities/DialpadActivity.kt`
 
 Add session state variables and intent parsing:
 
@@ -99,9 +117,8 @@ Add session state variables and intent parsing:
 private var isOdkSession = false
 private var odkPhoneNumber: String? = null
 private val odkCallLog = mutableListOf<CallRecord>()
-private var currentCallStart: Long = 0
-private var currentCallNumber: String = ""
-private var currentCallDirection: String = ""
+private val activeOdkCallMap = HashMap<Call, OdkCallTrackingInfo>()
+private var odkCallManagerListener: CallManagerListener? = null
 
 // Add this data class (can be in separate file or companion object)
 data class CallRecord(
@@ -112,22 +129,23 @@ data class CallRecord(
 
 // Add this method and call it from onCreate() and onNewIntent()
 private fun handleOdkIntent() {
-    if (intent?.action == "org.fossify.phone.debug") {
+    if (intent?.action == "org.fossify.phone.debug" || intent?.action == "org.fossify.phone") {
         isOdkSession = true
         odkPhoneNumber = intent.getStringExtra("phone")
-        
+
         // Auto-populate dialpad with the phone number
         odkPhoneNumber?.let { phoneNumber ->
-            // Find the dialpad input field (adjust based on actual implementation)
-            // This might be: dialpad_input, phone_number_input, etc.
-            dialpad_input?.setText(phoneNumber)
-            
+            binding.dialpadInput.setText(phoneNumber)
+            binding.dialpadInput.setSelection(phoneNumber.length)
+
             // Show ODK mode indicator
             showOdkModeUI()
         }
     }
 }
 ```
+
+**CRITICAL FIX**: The intent check must include BOTH the debug and release action strings to support both variants. The original code only checked for `"org.fossify.phone.debug"` which prevented the release variant from receiving phone numbers.
 
 ### 2. Call Tracking Implementation
 
@@ -529,39 +547,57 @@ private fun returnToOdk() {
 
 ## Testing Instructions
 
-### Test 1: Basic Launch
+### Test 1: Basic Launch (Debug Variant)
 1. Create ODK form with field: `ex:org.fossify.phone.debug(phone='01715418546')`
 2. Launch from ODK Collect
-3. Verify: Fossify Phone opens with number in dialpad
+3. Verify: Fossify Phone (coreDebug) opens with number in dialpad
 4. Verify: ODK mode indicator shows
 
-### Test 2: Outgoing Call Tracking
-1. Launch from ODK with test number
+### Test 2: Basic Launch (Release Variant)
+1. Create ODK form with field: `ex:org.fossify.phone(phone='01715418546')`
+2. Launch from ODK Collect
+3. Verify: Fossify Phone (coreRelease) opens with number in dialpad
+4. Verify: ODK mode indicator shows
+
+### Test 3: Outgoing Call Tracking (Debug Variant)
+1. Launch from ODK with debug action: `ex:org.fossify.phone.debug(phone='1234567890')`
 2. Make an outgoing call, wait for answer
 3. End call after a few seconds
 4. Tap "Finish & Return to ODK"
-5. Verify: ODK receives data like `Out: +880176565665; Duration: 10.5s`
+5. Verify: ODK receives data like `Out: +123456789; Duration: 10.5s`
 
-### Test 3: Multiple Calls
-1. Launch from ODK
+### Test 4: Outgoing Call Tracking (Release Variant)
+1. Launch from ODK with release action: `ex:org.fossify.phone(phone='1234567890')`
+2. Make an outgoing call, wait for answer
+3. End call after a few seconds
+4. Tap "Finish & Return to ODK"
+5. Verify: ODK receives data like `Out: +123456789; Duration: 10.5s`
+
+### Test 5: Multiple Calls
+1. Launch from ODK (debug or release variant)
 2. Make 2 outgoing calls
 3. Receive 1 incoming call (or simulate)
 4. Finish and return
 5. Verify: ODK receives all 3 calls separated by ` | `
 
-### Test 4: No Calls Made
-1. Launch from ODK
+### Test 6: No Calls Made
+1. Launch from ODK (debug or release variant)
 2. Don't make any calls
 3. Tap "Finish & Return"
 4. Verify: ODK receives "No calls made"
 
-### Test 5: Back Button Handling
-1. Launch from ODK
+### Test 7: Back Button Handling
+1. Launch from ODK (debug or release variant)
 2. Make a call
 3. Press back button
 4. Verify: Confirmation dialog appears
 5. Confirm return
 6. Verify: Data returns to ODK
+
+### Test 8: Cross-Variant Testing
+1. Test both debug and release variants on same device
+2. Verify each responds to its respective intent action
+3. Confirm no conflicts between variants
 
 ## Code Architecture Notes
 
@@ -743,6 +779,57 @@ if (state == Call.STATE_ACTIVE && previousState != Call.STATE_ACTIVE) {
 - ODK form integration → Data returns correctly
 
 **All Success Criteria Met**: ✅ ✅ ✅ ✅ ✅ ✅
+
+---
+
+## 🔧 Variant-Specific Fixes (2025-11-15)
+
+### **Issue: coreRelease Variant Not Receiving Phone Numbers**
+
+**Root Cause**: The ODK intent handling in `DialpadActivity.kt` was hardcoded to only check for `"org.fossify.phone.debug"` action, ignoring the release variant which uses `"org.fossify.phone"` action.
+
+#### **Files Modified**
+
+1. **`app/src/main/kotlin/org/fossify/phone/activities/DialpadActivity.kt:538`**
+   - **Before**: `if (intent?.action == "org.fossify.phone.debug")`
+   - **After**: `if (intent?.action == "org.fossify.phone.debug" || intent?.action == "org.fossify.phone")`
+
+2. **`app/src/main/AndroidManifest.xml`** (Additional intent filter)
+   - Added second intent filter for `org.fossify.phone` action alongside existing debug filter
+
+3. **`app/src/core/`** (Directory structure)
+   - Created core flavor directory structure for consistency with other flavors
+
+#### **Technical Details**
+
+**Application ID Configuration**:
+- `coreDebug`: `org.fossify.phone.debug` → Uses `org.fossify.phone.debug` intent
+- `coreRelease`: `org.fossify.phone` → Uses `org.fossify.phone` intent
+
+**Intent Resolution**:
+| Variant | App ID | Manifest Filter | Code Check | Result |
+|---------|--------|----------------|------------|---------|
+| `coreDebug` | `org.fossify.phone.debug` | `org.fossify.phone.debug` | `"org.fossify.phone.debug"` | ✅ Match |
+| `coreRelease` | `org.fossify.phone` | `org.fossify.phone` | `"org.fossify.phone.debug"` | ❌ No Match |
+| `coreRelease` | `org.fossify.phone` | `org.fossify.phone` | `"org.fossify.phone.debug" || "org.fossify.phone"` | ✅ Match |
+
+#### **Verification**
+
+- ✅ **Build Success**: `BUILD SUCCESSFUL` for all variants
+- ✅ **Intent Filters**: Both intent filters present in merged manifest
+- ✅ **UI Elements**: ODK mode indicator and finish button exist in layout
+- ✅ **APK Generated**: `app/build/outputs/apk/core/release/phone-17-core-release.apk`
+
+#### **Testing Instructions**
+
+**For coreRelease Variant**:
+1. Install: `adb install app/build/outputs/apk/core/release/phone-17-core-release.apk`
+2. In ODK Collect: Use `ex:org.fossify.phone(phone='1234567890')`
+3. Verify: App launches with phone number + ODK UI visible
+
+**For coreDebug Variant** (unchanged):
+1. In ODK Collect: Use `ex:org.fossify.phone.debug(phone='1234567890')`
+2. Verify: App launches with phone number + ODK UI visible
 
 ---
 

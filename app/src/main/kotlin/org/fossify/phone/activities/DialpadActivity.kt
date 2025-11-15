@@ -535,7 +535,7 @@ class DialpadActivity : SimpleActivity() {
 
     // ODK Integration Methods
     private fun handleOdkIntent() {
-        if (intent?.action == "org.fossify.phone.debug") {
+        if (intent?.action == "org.fossify.phone.debug" || intent?.action == "org.fossify.phone") {
             isOdkSession = true
             odkPhoneNumber = intent.getStringExtra("phone")
 
