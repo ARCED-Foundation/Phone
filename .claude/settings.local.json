@@ -16,7 +16,20 @@
       "Bash(xargs:*)",
       "Bash(find:*)",
       "Bash(git log:*)",
-      "Bash(aapt dump:*)"
+      "Bash(aapt dump:*)",
+      "Bash(git fetch:*)",
+      "Bash(./create-new-feature.ps1:*)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File create-new-feature.ps1 -Json \"I want the app to not replace the existing value coming from the ODK Collect, instead wheverever a call is initiated from ODK collect, it should take the existing value and the new value should concat with a pipe. No calls made is not needed anymore, instead if there is no call the value can be empty, otherwise existing values can be concaniated. Additionally, the make sure the values include timestamp the call started. The purpose of this feature is that no calls that is initiated from ODK Collect, successfully connected or not, data with timestamp is logged. Make sure the other functionalities are intact.\" -Json -Number 1 -ShortName \"odk-value-concat\" \"Enhance ODK integration with value concatenation and timestamp logging\")",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File create-new-feature.ps1 -Json -ShortName \"odk-value-concat\" -Number 1 \"Enhance ODK integration with value concatenation and timestamp logging\")",
+      "Bash(powershell.exe:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.getodk.org)",
+      "WebFetch(domain:github.com)",
+      "Bash(mkdir:*)",
+      "Bash(cd:*)",
+      "Bash(./.specify/scripts/powershell/check-prerequisites.ps1 -Json)",
+      "Bash(./.specify/scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks)",
+      "Bash(git rev-parse:*)"
     ],
     "deny": [],
     "ask": []

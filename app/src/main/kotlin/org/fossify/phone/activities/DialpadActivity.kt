@@ -19,6 +19,7 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.net.toUri
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.SavedStateHandle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.fossify.commons.extensions.applyColorFilter
@@ -37,6 +38,7 @@ import org.fossify.commons.extensions.performHapticFeedback
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.value
 import org.fossify.commons.extensions.viewBinding
+import org.fossify.phone.extensions.validateOdkIntent
 import org.fossify.commons.helpers.ContactsHelper
 import org.fossify.commons.helpers.KeypadHelper
 import org.fossify.commons.helpers.LOWER_ALPHA_INT
@@ -64,6 +66,11 @@ import org.fossify.phone.helpers.DIALPAD_TONE_LENGTH_MS
 import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.helpers.ToneGeneratorHelper
 import org.fossify.phone.models.SpeedDial
+import org.fossify.phone.models.OdkCallRecord
+import org.fossify.phone.models.OdkCallTrackingInfo
+import org.fossify.phone.models.ODKSession
+import org.fossify.phone.models.CallDirection
+import org.fossify.phone.models.ConcatenatedValue
 import android.telecom.Call
 import org.fossify.phone.models.AudioRoute
 import java.util.Locale
@@ -71,13 +78,12 @@ import kotlin.math.roundToInt
 
 class DialpadActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityDialpadBinding::inflate)
+    private val savedStateHandle by lazy { SavedStateHandle() }
 
-    // ODK session state
-    private var isOdkSession = false
-    private var odkPhoneNumber: String? = null
-    private val odkCallLog = mutableListOf<OdkCallRecord>()
-    private val activeOdkCallMap = HashMap<Call, OdkCallTrackingInfo>()
+    // ODK session state using CallManager
+    private var odkSession: ODKSession? = null
     private var odkCallManagerListener: CallManagerListener? = null
+    private var isOdkSession = false
 
     private var allContacts = ArrayList<Contact>()
     private var speedDialValues = ArrayList<SpeedDial>()
@@ -87,18 +93,7 @@ class DialpadActivity : SimpleActivity() {
     private val longPressHandler = Handler(Looper.getMainLooper())
     private val pressedKeys = mutableSetOf<Char>()
 
-    // ODK data classes
-    data class OdkCallRecord(
-        val direction: String, // "In" or "Out"
-        val number: String,
-        val duration: Double // in seconds
-    )
-
-    data class OdkCallTrackingInfo(
-        var connectTime: Long = 0L,
-        var number: String = "",
-        var direction: String = ""
-    )
+    // ODK data classes removed - using models from org.fossify.phone.models package
 
     private var hasRussianLocale = false
     private val russianCharsMap by lazy {
@@ -129,20 +124,25 @@ class DialpadActivity : SimpleActivity() {
             override fun onAudioStateChanged(audioState: AudioRoute) {}
             override fun onPrimaryCallChanged(call: Call) {}
             override fun onCallStarted(number: String, isOutgoing: Boolean) {
-                this@DialpadActivity.onOdkCallStarted(number, isOutgoing)
+                // Legacy method - enhanced version with Call object is preferred
+                // For now, we'll create a dummy call object and use the enhanced method
+                android.util.Log.d("ODK_INTEGRATION", "Legacy onCallStarted called: number=$number, isOutgoing=$isOutgoing")
+                // TODO: Consider removing this legacy method implementation once CallManager is updated
             }
             override fun onCallActive(number: String, isOutgoing: Boolean) {
-                this@DialpadActivity.onOdkCallActive(number, isOutgoing)
+                // Legacy method - enhanced version with Call object is preferred
+                // For now, we'll log and ignore since we can't get the Call object
+                android.util.Log.d("ODK_INTEGRATION", "Legacy onCallActive called: number=$number, isOutgoing=$isOutgoing")
             }
             override fun onCallEnded() {
-                this@DialpadActivity.onOdkCallEnded()
+                // ODK call completion handled centrally by CallManager
             }
             // Enhanced methods that use Call objects for reliable tracking
             override fun onCallStarted(call: Call, number: String, isOutgoing: Boolean) {
-                this@DialpadActivity.onOdkCallStarted(call, number, isOutgoing)
+                // ODK tracking handled centrally by CallManager
             }
             override fun onCallActive(call: Call, number: String, isOutgoing: Boolean) {
-                this@DialpadActivity.onOdkCallActive(call, number, isOutgoing)
+                // ODK tracking handled centrally by CallManager
             }
         }
         odkCallManagerListener = listener
@@ -250,6 +250,7 @@ class DialpadActivity : SimpleActivity() {
             dialpadInput.onTextChangeListener { dialpadValueChanged(it) }
             dialpadInput.requestFocus()
             dialpadInput.disableKeyboard()
+
         }
 
         ContactsHelper(this).getContacts(showOnlyContactsWithNumbers = true) { allContacts ->
@@ -535,18 +536,57 @@ class DialpadActivity : SimpleActivity() {
 
     // ODK Integration Methods
     private fun handleOdkIntent() {
-        if (intent?.action == "org.fossify.phone.debug" || intent?.action == "org.fossify.phone") {
-            isOdkSession = true
-            odkPhoneNumber = intent.getStringExtra("phone")
+        android.util.Log.d("ODK_INTEGRATION", "handleOdkIntent called with intent: $intent")
 
-            // Auto-populate dialpad with the phone number
-            odkPhoneNumber?.let { phoneNumber ->
-                binding.dialpadInput.setText(phoneNumber)
-                binding.dialpadInput.setSelection(phoneNumber.length)
+        // Debug: Log all intent details
+        intent?.let { intent ->
+            android.util.Log.d("ODK_INTEGRATION", "Intent action: ${intent.action}")
+            android.util.Log.d("ODK_INTEGRATION", "Intent data: ${intent.data}")
+            android.util.Log.d("ODK_INTEGRATION", "Intent categories: ${intent.categories}")
+            intent.extras?.keySet()?.forEach { key ->
+                val value = intent.extras?.get(key)
+                android.util.Log.d("ODK_INTEGRATION", "Extra '$key': $value (type: ${value?.javaClass?.simpleName})")
+            }
+            val intentValue = intent.getStringExtra("value")
+            android.util.Log.d("ODK_INTEGRATION", "Intent 'value' extra: '$intentValue'")
+        }
+
+        intent?.validateOdkIntent()?.let { validationResult ->
+            android.util.Log.d("ODK_INTEGRATION", "Validation result: $validationResult")
+            android.util.Log.d("ODK_INTEGRATION", "Is valid: ${validationResult.isValid}")
+            android.util.Log.d("ODK_INTEGRATION", "Phone number: ${validationResult.phoneNumber}")
+            android.util.Log.d("ODK_INTEGRATION", "Existing value: ${validationResult.existingValue}")
+            android.util.Log.d("ODK_INTEGRATION", "Variant: ${validationResult.variant}")
+
+            if (validationResult.isValid) {
+                // Set ODK session flag
+                isOdkSession = true
+                android.util.Log.d("ODK_INTEGRATION", "ODK session set to true")
+
+                // Initialize ODK session with CallManager
+                CallManager.initializeOdkSession(
+                    context = this,
+                    phoneNumber = validationResult.phoneNumber,
+                    existingValue = validationResult.existingValue,
+                    variant = validationResult.variant
+                )
+                android.util.Log.d("ODK_INTEGRATION", "ODK session initialized with CallManager")
+
+                // Auto-populate dialpad with the phone number
+                validationResult.phoneNumber?.let { phoneNumber ->
+                    binding.dialpadInput.setText(phoneNumber)
+                    binding.dialpadInput.setSelection(phoneNumber.length)
+                    android.util.Log.d("ODK_INTEGRATION", "Dialpad populated with phone number: $phoneNumber")
+                }
 
                 // Show ODK mode indicator
                 showOdkModeUI()
+                android.util.Log.d("ODK_INTEGRATION", "ODK mode UI shown")
+            } else {
+                android.util.Log.d("ODK_INTEGRATION", "ODK intent validation failed: ${validationResult.errors}")
             }
+        } ?: run {
+            android.util.Log.d("ODK_INTEGRATION", "No intent or validation result returned null")
         }
     }
 
@@ -565,32 +605,35 @@ class DialpadActivity : SimpleActivity() {
     }
 
     private fun showFinishConfirmation() {
+        val session = CallManager.getOdkSession()
+        val callCount = session?.callRecords?.size ?: 0
+        val preview = CallManager.getConcatenatedOdkValue().take(100) + if (CallManager.getConcatenatedOdkValue().length > 100) "..." else ""
+
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Return to ODK Collect?")
-            .setMessage("${odkCallLog.size} call(s) logged. Return data to ODK Collect?")
+            .setMessage("$callCount call(s) logged.\\nPreview: $preview")
             .setPositiveButton("Return Data") { _, _ -> returnToOdk() }
             .setNegativeButton("Continue Calls", null)
             .show()
     }
 
     private fun returnToOdk() {
-        if (!isOdkSession) return
+        if (!CallManager.isOdkSessionActive()) return
 
         try {
-            // Format call log data
-            val formattedData = if (odkCallLog.isEmpty()) {
-                "No calls made"
-            } else {
-                odkCallLog.joinToString(" | ") { call ->
-                    val cleanDuration = String.format("%.2f", call.duration)
-                    "${call.direction}: ${call.number}; Duration: $cleanDuration"
-                }
-            }
+            // End ODK session and get concatenated value
+            val concatenatedValue = CallManager.getConcatenatedOdkValue()
+            CallManager.endOdkSession()
+
+            // Reset ODK session flag
+            isOdkSession = false
 
             // Create return intent with String extra named "value" (ODK standard)
             val returnIntent = Intent().apply {
-                putExtra("value", formattedData)
+                putExtra("value", concatenatedValue)
             }
+
+            android.util.Log.d("ODK_INTEGRATION", "Returning data to ODK: $concatenatedValue")
 
             setResult(RESULT_OK, returnIntent)
             finish()
@@ -620,121 +663,52 @@ class DialpadActivity : SimpleActivity() {
         }
     }
 
+
+    // Session state persistence methods
+    private fun saveOdkSessionState() {
+        odkSession?.let { session ->
+            savedStateHandle.set("odk_session_is_active", session.isActive)
+            savedStateHandle.set("odk_session_phone_number", session.phoneNumber)
+            savedStateHandle.set("odk_session_existing_value", session.existingValue)
+            savedStateHandle.set("odk_session_start_time", session.sessionStartTime)
+            savedStateHandle.set("odk_session_variant", session.sessionVariant)
+        }
+    }
+
+    private fun restoreOdkSessionState(): Boolean {
+        val isActive = savedStateHandle.get<Boolean>("odk_session_is_active") ?: false
+        if (isActive) {
+            odkSession = ODKSession(
+                phoneNumber = savedStateHandle.get<String>("odk_session_phone_number"),
+                existingValue = savedStateHandle.get<String>("odk_session_existing_value"),
+                sessionStartTime = savedStateHandle.get<Long>("odk_session_start_time") ?: System.currentTimeMillis(),
+                sessionVariant = savedStateHandle.get<String>("odk_session_variant"),
+                isActive = isActive,
+                callRecords = emptyList<OdkCallRecord>(),
+                activeCalls = emptyMap<String, OdkCallTrackingInfo>()
+            )
+
+            // Restore dialpad text if phone number exists
+            odkSession?.phoneNumber?.let { phoneNumber ->
+                binding.dialpadInput.setText(phoneNumber)
+                binding.dialpadInput.setSelection(phoneNumber.length)
+            }
+
+            showOdkModeUI()
+            return true
+        }
+        return false
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-
-        if (isOdkSession) {
-            outState.putBoolean("isOdkSession", true)
-            outState.putString("odkPhoneNumber", odkPhoneNumber)
-            // Save ODK call log as serialized strings
-        val callLogStrings = odkCallLog.map { "${it.direction}|${it.number}|${it.duration}" }
-        outState.putStringArrayList("odkCallLog", ArrayList(callLogStrings))
-        }
+        saveOdkSessionState()
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
         super.onRestoreInstanceState(savedInstanceState)
-
-        isOdkSession = savedInstanceState.getBoolean("isOdkSession", false)
-        odkPhoneNumber = savedInstanceState.getString("odkPhoneNumber")
-        // Restore ODK call log from serialized strings
-        val callLogStrings = savedInstanceState.getStringArrayList("odkCallLog") ?: emptyList()
-        callLogStrings.forEach { serialized ->
-            val parts = serialized.split("|")
-            if (parts.size == 3) {
-                odkCallLog.add(OdkCallRecord(
-                    direction = parts[0],
-                    number = parts[1],
-                    duration = parts[2].toDouble()
-                ))
-            }
-        }
-
-        if (isOdkSession) {
-            showOdkModeUI()
-        }
+        restoreOdkSessionState()
     }
 
-    // ODK call tracking methods
-    private fun onOdkCallStarted(number: String, isOutgoing: Boolean) {
-        // Legacy method - use the enhanced version with Call object
-        android.util.Log.d("ODK_INTEGRATION", "Legacy onOdkCallStarted called (ignoring): number=$number, isOutgoing=$isOutgoing")
-    }
-
-    private fun onOdkCallActive(number: String, isOutgoing: Boolean) {
-        // Legacy method - use the enhanced version with Call object
-        android.util.Log.d("ODK_INTEGRATION", "Legacy onOdkCallActive called (ignoring): number=$number, isOutgoing=$isOutgoing")
-    }
-
-    // Enhanced method: uses Call object for reliable tracking
-    private fun onOdkCallStarted(call: Call, number: String, isOutgoing: Boolean) {
-        if (!isOdkSession) {
-            android.util.Log.d("ODK_INTEGRATION", "onOdkCallStarted called but not in ODK session: number=$number, isOutgoing=$isOutgoing")
-            return
-        }
-
-        android.util.Log.d("ODK_INTEGRATION", "onOdkCallStarted called: number=$number, isOutgoing=$isOutgoing, isOdkSession=$isOdkSession")
-
-        if (!activeOdkCallMap.containsKey(call)) {
-            android.util.Log.d("ODK_INTEGRATION", "Adding new ODK call tracking for call: $call")
-            activeOdkCallMap[call] = OdkCallTrackingInfo(
-                number = number,
-                direction = if (isOutgoing) "Out" else "In"
-            )
-        }
-
-        android.util.Log.d("ODK_INTEGRATION", "Active ODK calls: ${activeOdkCallMap.size}")
-    }
-
-    // Enhanced method: only called when call becomes ACTIVE (connected)
-    private fun onOdkCallActive(call: Call, number: String, isOutgoing: Boolean) {
-        if (!isOdkSession) {
-            android.util.Log.d("ODK_INTEGRATION", "onOdkCallActive called but not in ODK session: number=$number, isOutgoing=$isOutgoing")
-            return
-        }
-
-        android.util.Log.d("ODK_INTEGRATION", "onOdkCallActive called: number=$number, isOutgoing=$isOutgoing")
-
-        // Set connectTime when call becomes ACTIVE - this is critical for accurate duration calculation
-        activeOdkCallMap[call]?.connectTime = System.currentTimeMillis()
-        android.util.Log.d("ODK_INTEGRATION", "Set connectTime for call $call: ${activeOdkCallMap[call]?.connectTime}")
-        android.util.Log.d("ODK_INTEGRATION", "Duration timing started for call: $call")
-    }
-
-    private fun onOdkCallEnded() {
-        if (!isOdkSession) {
-            android.util.Log.d("ODK_INTEGRATION", "onOdkCallEnded called but not in ODK session")
-            return
-        }
-
-        android.util.Log.d("ODK_INTEGRATION", "onOdkCallEnded called, active calls: ${activeOdkCallMap.size}")
-
-        // Process all active ODK calls
-        val completedCalls = activeOdkCallMap.toList() // Create a copy to avoid concurrent modification
-        if (completedCalls.isEmpty()) {
-            android.util.Log.w("ODK_INTEGRATION", "onOdkCallEnded called but no active ODK calls to process")
-            return
-        }
-
-        completedCalls.forEach { (call, trackingInfo) ->
-            android.util.Log.d("ODK_INTEGRATION", "Processing call: $call, connectTime: ${trackingInfo.connectTime}")
-            if (trackingInfo.connectTime > 0) {
-                val duration = (System.currentTimeMillis() - trackingInfo.connectTime) / 1000.0
-                android.util.Log.d("ODK_INTEGRATION", "Adding completed call: ${trackingInfo.direction} ${trackingInfo.number}, duration: ${duration}s")
-
-                odkCallLog.add(OdkCallRecord(
-                    direction = trackingInfo.direction,
-                    number = trackingInfo.number,
-                    duration = duration
-                ))
-            } else {
-                android.util.Log.w("ODK_INTEGRATION", "Call ended but no connect time recorded: $call")
-            }
-        }
-
-        // Clear active calls
-        activeOdkCallMap.clear()
-        android.util.Log.d("ODK_INTEGRATION", "Total calls logged: ${odkCallLog.size}")
-    }
 
 }
