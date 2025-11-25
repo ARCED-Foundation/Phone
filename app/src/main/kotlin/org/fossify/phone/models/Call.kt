@@ -69,12 +69,15 @@ data class OdkCallRecord(
 @Serializable
 data class ODKSession(
     val isActive: Boolean,
-    val phoneNumber: String?,               // Phone number from ODK intent
-    val existingValue: String?,             // Value from previous ODK session
-    val sessionStartTime: Long,             // When session started
-    val callRecords: List<OdkCallRecord>,   // All calls made during session
-    val activeCalls: Map<String, OdkCallTrackingInfo>, // Currently active calls
-    val sessionVariant: String?             // Build variant (core, foss, or gplay)
+    val phoneNumber: String?,
+    val existingValue: String?,
+    val sessionStartTime: Long,
+    val callRecords: List<OdkCallRecord>,
+    val activeCalls: Map<String, OdkCallTrackingInfo>,
+    val sessionVariant: String? = null,
+    val fieldId: String? = null,
+    val callingPackage: String? = null,
+    val autoReturnDisconnect: Boolean = true
 ) {
 
     /**

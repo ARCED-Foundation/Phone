@@ -74,6 +74,9 @@ import org.fossify.phone.models.CallDirection
 import org.fossify.phone.models.ConcatenatedValue
 import android.telecom.Call
 import org.fossify.phone.models.AudioRoute
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import kotlinx.serialization.json.Json
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -85,6 +88,8 @@ class DialpadActivity : SimpleActivity() {
     private var odkSession: ODKSession? = null
     private var odkCallManagerListener: CallManagerListener? = null
     private var isOdkSession = false
+    private var firstOdkConnect = false
+    private var odkReturnReceiver: BroadcastReceiver? = null
 
     private var allContacts = ArrayList<Contact>()
     private var speedDialValues = ArrayList<SpeedDial>()
@@ -119,6 +124,11 @@ class DialpadActivity : SimpleActivity() {
         // Handle ODK intent
         handleOdkIntent()
 
+        // Register ODK return broadcast receiver
+        odkReturnReceiver = OdkReturnReceiver()
+        val filter = IntentFilter("org.fossify.phone.ODK_RETURN_FULL")
+        registerReceiver(odkReturnReceiver, filter)
+
         // Register CallManager listener for ODK tracking
         val listener = object : CallManagerListener {
             override fun onStateChanged() {}
@@ -143,7 +153,11 @@ class DialpadActivity : SimpleActivity() {
                 // ODK tracking handled centrally by CallManager
             }
             override fun onCallActive(call: Call, number: String, isOutgoing: Boolean) {
-                // ODK tracking handled centrally by CallManager
+                if (isOdkSession && !firstOdkConnect) {
+                    firstOdkConnect = true
+                    android.util.Log.d("ODK_INTEGRATION", "First ODK call active - auto-return partial")
+                    returnToOdk(isPartial = true)
+                }
             }
         }
         odkCallManagerListener = listener
@@ -565,11 +579,20 @@ class DialpadActivity : SimpleActivity() {
                 android.util.Log.d("ODK_INTEGRATION", "ODK session set to true")
 
                 // Initialize ODK session with CallManager (fallback if no value)
+                val fieldId = intent.getStringExtra("odk_field_id")
+                val callingPackage = callingActivity?.packageName
+                val autoReturnDisconnect = intent.getBooleanExtra("auto_return_disconnect", true)
+
+                android.util.Log.d("ODK_INTEGRATION", "ODK extras - fieldId: \$fieldId, callingPackage: \$callingPackage, autoReturnDisconnect: \$autoReturnDisconnect")
+
                 CallManager.initializeOdkSession(
                     context = this,
                     phoneNumber = validationResult.phoneNumber,
                     existingValue = validationResult.existingValue,
-                    variant = validationResult.variant
+                    variant = validationResult.variant,
+                    fieldId = fieldId,
+                    callingPackage = callingPackage,
+                    autoReturnDisconnect = autoReturnDisconnect
                 )
                 android.util.Log.d("ODK_INTEGRATION", "ODK session initialized with CallManager")
 
@@ -658,12 +681,27 @@ class DialpadActivity : SimpleActivity() {
         }
     }
 
+    private inner class OdkReturnReceiver : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == "org.fossify.phone.ODK_RETURN_FULL") {
+                android.util.Log.d("ODK_INTEGRATION", "Received ODK return broadcast")
+                returnToOdk()
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         // Clean up ODK CallManager listener
         odkCallManagerListener?.let { listener ->
             CallManager.removeListener(listener)
             odkCallManagerListener = null
+        }
+        // Unregister receiver if registered
+        try {
+            unregisterReceiver(odkReturnReceiver)
+        } catch (e: IllegalArgumentException) {
+            // Receiver not registered
         }
     }
 

@@ -293,19 +293,17 @@ class CallManager {
 
         private fun notifyCallActiveEvents(call: Call) {
             val number = getPhoneNumber(call)
-            val isOutgoing = isCallOutgoing(call)
-            android.util.Log.d("CallManager", "Call became active: $number, isOutgoing: $isOutgoing, state: ${callStateToString(call.getStateCompat())}")
+            val trackingInfo = activeOdkCallTracking.values.find { it.number == number }
+            val isOutgoing = trackingInfo?.direction == CallDirection.OUTGOING ?: isCallOutgoing(call)
+            android.util.Log.d("CallManager", "Call became active: $number, isOutgoing: $isOutgoing (tracking: ${trackingInfo?.direction}), state: ${callStateToString(call.getStateCompat())}")
 
             // Update ODK call tracking with connection time
             if (isOdkSessionActive()) {
                 try {
-                    // Find the active ODK call for this number and update connection time
-                    activeOdkCallTracking.values.find { it.number == number }?.let { trackingInfo ->
-                        val callId = findCallIdByNumber(number)
-                        if (callId != null) {
-                            updateOdkCallConnection(callId, System.currentTimeMillis())
-                            android.util.Log.d("CallManager", "ODK call connected for $number at ${System.currentTimeMillis()}")
-                        }
+                    val callId = findCallIdByNumber(number)
+                    if (callId != null) {
+                        updateOdkCallConnection(callId, System.currentTimeMillis())
+                        android.util.Log.d("CallManager", "ODK call connected for $number at ${System.currentTimeMillis()}")
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("CallManager", "Failed to update ODK call connection: ${e.message}")
@@ -313,7 +311,6 @@ class CallManager {
             }
 
             for (listener in listeners) {
-                // Use only enhanced method for reliable tracking
                 listener.onCallActive(call, number, isOutgoing)
             }
         }
@@ -322,7 +319,8 @@ class CallManager {
             android.util.Log.d("CallManager", "Call ended event triggered for all calls")
 
             // Complete ODK call tracking for all active calls
-            if (isOdkSessionActive()) {
+            val session = odkSession
+            if (isOdkSessionActive() && session != null) {
                 try {
                     val currentTime = System.currentTimeMillis()
                     val completedRecords = mutableListOf<OdkCallRecord>()
@@ -330,7 +328,7 @@ class CallManager {
                     // Complete all active ODK calls
                     activeOdkCallTracking.entries.forEach { (callId, trackingInfo) ->
                         val duration = if (trackingInfo.connectTime != null) {
-                            (currentTime - trackingInfo.connectTime) / 1000.0
+                            (currentTime - trackingInfo.connectTime!!) / 1000.0
                         } else {
                             0.0 // Failed call
                         }
@@ -348,14 +346,40 @@ class CallManager {
                     }
 
                     android.util.Log.d("CallManager", "Completed ${completedRecords.size} ODK calls")
+
+                    // T009: Auto-return full data if configured
+                    if (session.autoReturnDisconnect && activeOdkCallTracking.isEmpty()) {
+                        sendOdkReturnBroadcast(session)
+                    }
                 } catch (e: Exception) {
-                    android.util.Log.e("CallManager", "Failed to complete ODK calls: ${e.message}")
+                    android.util.Log.e("CallManager", "Failed to complete ODK calls: ${e.message}", e)
                 }
             }
 
             for (listener in listeners) {
                 listener.onCallEnded()
             }
+        }
+
+        private fun sendOdkReturnBroadcast(session: ODKSession) {
+            val callingPackage = session.callingPackage ?: return
+            android.util.Log.d("CallManager", "Sending ODK return broadcast to $callingPackage")
+
+            val intent = Intent("org.fossify.phone.ODK_RETURN_FULL").apply {
+                setPackage(callingPackage)
+                putExtra("value", getConcatenatedOdkValue())
+                putExtra("total_duration", session.totalDuration)
+                putExtra("successful_calls", session.successfulCallCount)
+                putExtra("field_id", session.fieldId)
+                putExtra("form_valid", true)
+
+                // Serialize records as JSON
+                val recordsJson = kotlinx.serialization.json.Json.encodeToString(session.callRecords)
+                putExtra("records", recordsJson)
+            }
+
+            odkSessionContext?.sendBroadcast(intent)
+            android.util.Log.d("CallManager", "ODK return broadcast sent with value length: ${getConcatenatedOdkValue().length}")
         }
 
         fun getPrimaryCall(): Call? {
@@ -426,26 +450,29 @@ class CallManager {
         }
 
         // ODK Session Management Methods
-        fun initializeOdkSession(context: Context, phoneNumber: String?, existingValue: String?, variant: String?) {
+        fun initializeOdkSession(context: Context, phoneNumber: String?, existingValue: String?, variant: String?, fieldId: String? = null, callingPackage: String? = null, autoReturnDisconnect: Boolean = true) {
     // Clear any existing session data to prevent overwrite
     odkSession?.callRecords?.let { _ -> odkSession = odkSession?.copy(callRecords = emptyList()) }
     activeOdkCallTracking.clear()
 
-            odkSessionContext = context.applicationContext
-            odkSession = ODKSession(
-                phoneNumber = phoneNumber,
-                existingValue = existingValue,
-                sessionStartTime = System.currentTimeMillis(),
-                sessionVariant = variant,
-                isActive = true,
-                callRecords = emptyList<OdkCallRecord>(),
-                activeCalls = emptyMap<String, OdkCallTrackingInfo>()
-            )
-            // Save session to SharedPreferences
-            odkSessionContext?.let { context ->
-                context.saveOdkSession(odkSession!!)
-            }
-        }
+    odkSessionContext = context.applicationContext
+    odkSession = ODKSession(
+        phoneNumber = phoneNumber,
+        existingValue = existingValue,
+        sessionStartTime = System.currentTimeMillis(),
+        sessionVariant = variant,
+        fieldId = fieldId,
+        callingPackage = callingPackage,
+        autoReturnDisconnect = autoReturnDisconnect,
+        isActive = true,
+        callRecords = emptyList<OdkCallRecord>(),
+        activeCalls = emptyMap<String, OdkCallTrackingInfo>()
+    )
+    // Save session to SharedPreferences
+    odkSessionContext?.let { context ->
+        context.saveOdkSession(odkSession!!)
+    }
+}
 
         fun getOdkSession(): ODKSession? = odkSession
 
@@ -585,7 +612,7 @@ class CallManager {
             duration: Double,
             timestamp: Long
         ): String {
-            val formattedTimestamp = formatCurrentTimeIso8601().replace("Z", ".000Z") // Ensure ISO format
+            val formattedTimestamp = org.fossify.phone.extensions.formatTimestampIso8601(timestamp).replace("Z", ".000Z")
             return when (direction) {
                 CALL_DIRECTION_INCOMING -> String.format(
                     Locale.US,
