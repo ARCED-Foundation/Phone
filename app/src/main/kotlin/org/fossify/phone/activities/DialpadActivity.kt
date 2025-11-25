@@ -559,11 +559,14 @@ class DialpadActivity : SimpleActivity() {
             android.util.Log.d("ODK_INTEGRATION", "Variant: ${validationResult.variant}")
 
             if (validationResult.isValid) {
+                // Clear prior last ODK value for fresh session (intent overrides)
+                clearLastOdkValue()
+
                 // Set ODK session flag
                 isOdkSession = true
                 android.util.Log.d("ODK_INTEGRATION", "ODK session set to true")
 
-                // Initialize ODK session with CallManager
+                // Initialize ODK session with CallManager (fallback if no value)
                 CallManager.initializeOdkSession(
                     context = this,
                     phoneNumber = validationResult.phoneNumber,
@@ -628,12 +631,15 @@ class DialpadActivity : SimpleActivity() {
             // Reset ODK session flag
             isOdkSession = false
 
-            // Create return intent with String extra named "value" (ODK standard)
+            // Persist full concatenated value for next session fallback
+            saveLastOdkValue(concatenatedValue)
+
+// Create return intent with String extra named "value" (ODK standard)
             val returnIntent = Intent().apply {
                 putExtra("value", concatenatedValue)
             }
 
-            android.util.Log.d("ODK_INTEGRATION", "Returning data to ODK: $concatenatedValue")
+            android.util.Log.d("ODK_INTEGRATION", "Returning data to ODK: $concatenatedValue (saved for fallback)")
 
             setResult(RESULT_OK, returnIntent)
             finish()

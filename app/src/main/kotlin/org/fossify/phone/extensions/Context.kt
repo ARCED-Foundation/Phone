@@ -148,6 +148,21 @@ fun Context.loadOdkSessionState(): OdkSessionState? {
 /**
  * Clears ODK session state from SharedPreferences
  */
+fun Context.saveLastOdkValue(value: String) {
+    odkSessionPrefs().edit().putString("last_odk_return_value", value).apply()
+    android.util.Log.d("ODK_INTEGRATION", "Saved last ODK value: $value")
+}
+
+fun Context.loadLastOdkValue(): String? {
+    val value = odkSessionPrefs().getString("last_odk_return_value", null)?.takeIf { it.isNotBlank() }
+    if (value != null) android.util.Log.d("ODK_INTEGRATION", "Loaded fallback last ODK value: $value")
+    return value
+}
+
+fun Context.clearLastOdkValue() {
+    odkSessionPrefs().edit().remove("last_odk_return_value").apply()
+}
+
 fun Context.clearOdkSessionState() {
     odkSessionPrefs().edit().apply {
         clear()

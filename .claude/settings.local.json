@@ -29,7 +29,9 @@
       "Bash(cd:*)",
       "Bash(./.specify/scripts/powershell/check-prerequisites.ps1 -Json)",
       "Bash(./.specify/scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks)",
-      "Bash(git rev-parse:*)"
+      "Bash(git rev-parse:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
