@@ -39,6 +39,7 @@ import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.value
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.phone.extensions.validateOdkIntent
+import org.fossify.phone.extensions.saveLastOdkValue
 import org.fossify.commons.helpers.ContactsHelper
 import org.fossify.commons.helpers.KeypadHelper
 import org.fossify.commons.helpers.LOWER_ALPHA_INT
@@ -559,9 +560,6 @@ class DialpadActivity : SimpleActivity() {
             android.util.Log.d("ODK_INTEGRATION", "Variant: ${validationResult.variant}")
 
             if (validationResult.isValid) {
-                // Clear prior last ODK value for fresh session (intent overrides)
-                clearLastOdkValue()
-
                 // Set ODK session flag
                 isOdkSession = true
                 android.util.Log.d("ODK_INTEGRATION", "ODK session set to true")
