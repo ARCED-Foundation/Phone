@@ -20,23 +20,31 @@ import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
+import androidx.annotation.ColorInt
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.os.postDelayed
 import androidx.core.view.children
 import androidx.core.view.setPadding
 import androidx.core.view.updatePadding
+import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.RequestOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.*
 import org.fossify.commons.models.SimpleListItem
 import org.fossify.phone.R
 import org.fossify.phone.databinding.ActivityCallBinding
 import org.fossify.phone.dialogs.DynamicBottomSheetChooserDialog
+import org.fossify.phone.dialogs.ManualRecordConfirmationDialog
 import org.fossify.phone.extensions.*
 import org.fossify.phone.helpers.*
 import org.fossify.phone.models.AudioRoute
 import org.fossify.phone.models.CallContact
+import org.fossify.phone.models.CallOutcome
+import org.fossify.phone.utils.Logger
 import kotlin.math.max
 import kotlin.math.min
 
@@ -65,6 +73,7 @@ class CallActivity : SimpleActivity() {
     private var dialpadHeight = 0f
 
     private var audioRouteChooserDialog: DynamicBottomSheetChooserDialog? = null
+    private val manualCallRecordHelper by lazy { ManualCallRecordHelper(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -184,6 +193,10 @@ class CallActivity : SimpleActivity() {
 
         callEnd.setOnClickListener {
             endCall()
+        }
+
+        manualRecordButton.setOnClickListener {
+            showManualRecordDialog()
         }
 
         dialpadInclude.apply {
@@ -515,8 +528,9 @@ class CallActivity : SimpleActivity() {
     }
 
     private fun findVisibleViewsUnderDialpad(): Sequence<Pair<View, Float>> {
-        return binding.ongoingCallHolder.children
-            .filter { it is ImageView && it.isVisible() }
+        val manualButton = sequenceOf(binding.manualRecordButton)
+        return (binding.ongoingCallHolder.children + manualButton)
+            .filter { it.isVisible() }
             .map { view -> Pair(view, view.alpha) }
     }
 
@@ -734,6 +748,7 @@ class CallActivity : SimpleActivity() {
         binding.incomingCallHolder.beGone()
         binding.ongoingCallHolder.beVisible()
         binding.callEnd.beVisible()
+        showManualRecordButton()
     }
 
     private fun callRinging() {
@@ -745,6 +760,7 @@ class CallActivity : SimpleActivity() {
         binding.incomingCallHolder.beGone()
         binding.ongoingCallHolder.beVisible()
         binding.callEnd.beVisible()
+        showManualRecordButton()
         callDurationHandler.removeCallbacks(updateCallDurationTask)
         callDurationHandler.post(updateCallDurationTask)
     }
@@ -774,6 +790,7 @@ class CallActivity : SimpleActivity() {
 
         isCallEnded = true
         runOnUiThread {
+            hideManualRecordButton()
             if (callDuration > 0) {
                 disableAllActionButtons()
                 @SuppressLint("SetTextI18n")
@@ -799,6 +816,97 @@ class CallActivity : SimpleActivity() {
         } catch (_: Exception) {
             finish()
         }
+    }
+
+    private fun showManualRecordButton() {
+        binding.manualRecordButton.apply {
+            isEnabled = false
+            alpha = 0f
+            beGone()
+        }
+    }
+
+    private fun hideManualRecordButton() {
+        binding.manualRecordButton.beGone()
+    }
+
+    private fun showManualRecordDialog() {
+        ManualRecordConfirmationDialog.show(supportFragmentManager) {
+            setOnConfirmListener {
+                performManualRecord()
+            }
+        }
+    }
+
+    private fun performManualRecord() {
+        val manualData = buildManualRecordData()
+        if (manualData == null) {
+            toast(R.string.manual_record_failed)
+            return
+        }
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = manualCallRecordHelper.createManualRecord(manualData)
+            withContext(Dispatchers.Main) {
+                handleManualRecordResult(result)
+            }
+        }
+    }
+
+    private fun handleManualRecordResult(result: ManualCallRecordResult) {
+        when (result) {
+            is ManualCallRecordResult.Success -> {
+                Logger.callDetection("Manual call log created: ${result.callLogId}")
+                toast(R.string.manual_record_success)
+                endCall()
+            }
+
+            ManualCallRecordResult.Duplicate -> {
+                toast(R.string.manual_record_duplicate)
+            }
+
+            is ManualCallRecordResult.Failure -> {
+                Logger.callDetection("Manual call log failed: ${result.error}")
+                toast(R.string.manual_record_failed)
+            }
+        }
+    }
+
+    private fun buildManualRecordData(): ManualCallRecordData? {
+        val call = CallManager.getPrimaryCall() ?: return null
+        val number = call.details.handle?.schemeSpecificPart?.takeIf { it.isNotBlank() } ?: return null
+
+        val endTime = System.currentTimeMillis()
+        val connectTime = call.details.connectTimeMillis
+        val durationSeconds = if (connectTime > 0L) {
+            max(0.0, (endTime - connectTime) / 1000.0)
+        } else {
+            max(0.0, callDuration.toDouble())
+        }
+
+        val fallbackStartTime = (endTime - (durationSeconds * 1000.0).toLong()).coerceAtMost(endTime)
+        val startTime = if (connectTime > 0L && connectTime <= endTime) {
+            connectTime
+        } else {
+            fallbackStartTime
+        }
+
+        val state = call.getStateCompat()
+        val outcome = when {
+            state == Call.STATE_RINGING -> CallOutcome.NO_ANSWER
+            connectTime > 0L || state == Call.STATE_ACTIVE || state == Call.STATE_HOLDING -> CallOutcome.ANSWERED
+            else -> CallOutcome.FAILED
+        }
+
+        return ManualCallRecordData(
+            phoneNumber = number,
+            isOutgoing = call.isOutgoing(),
+            startTime = startTime,
+            endTime = endTime,
+            durationSeconds = durationSeconds,
+            outcome = outcome,
+            outcomeDetail = getString(R.string.manual_record_outcome_detail)
+        )
     }
 
     private val callCallback = object : CallManagerListener {
@@ -836,6 +944,17 @@ class CallActivity : SimpleActivity() {
 
         override fun onCallActive(call: Call, number: String, isOutgoing: Boolean) {
             // CallActivity doesn't need to handle ODK call tracking
+        }
+
+        override fun onCallOutcomeDetected(
+            call: Call,
+            outcome: org.fossify.phone.models.CallOutcome,
+            outcomeDetail: String?,
+            durationSeconds: Double,
+            startTimeMs: Long,
+            endTimeMs: Long
+        ) {
+            // CallActivity doesn't need to handle ODK call outcomes
         }
     }
 
@@ -897,6 +1016,10 @@ class CallActivity : SimpleActivity() {
             .forEach { view ->
                 setActionButtonEnabled(button = view as ImageView, enabled = false)
             }
+        binding.manualRecordButton.apply {
+            isEnabled = false
+            alpha = LOWER_ALPHA
+        }
     }
 
     private fun setActionButtonEnabled(button: ImageView, enabled: Boolean) {

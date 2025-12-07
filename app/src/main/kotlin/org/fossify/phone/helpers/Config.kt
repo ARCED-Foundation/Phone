@@ -17,6 +17,38 @@ import java.util.Locale
 class Config(context: Context) : BaseConfig(context) {
     companion object {
         fun newInstance(context: Context) = Config(context)
+
+        const val ADMIN_PIN_HASH = "admin_pin_hash"
+        const val ADMIN_PIN_FAILED_ATTEMPTS = "admin_pin_failed_attempts"
+        const val ADMIN_PIN_LOCKOUT_UNTIL = "admin_pin_lockout_until"
+        const val RESERVED_KEYS = "reserved_keys"
+        const val CENTRAL_BASE_URL_OVERRIDE = "central_base_url_override"
+        const val SYNC_LOG_RETENTION_DAYS = "sync_log_retention_days"
+        const val LAST_ODK_BASE_URL = "last_odk_base_url"
+        const val LAST_ODK_PROJECT_ID = "last_odk_project_id"
+        const val LAST_ODK_DATASET = "last_odk_dataset"
+
+        val DEFAULT_RESERVED_KEYS = setOf(
+            "centralBaseUrl",
+            "central_base_url",
+            "centralProjectId",
+            "central_project_id",
+            "centralDatasetName",
+            "central_dataset_name",
+            "system_*",
+            "odk_field_id",
+            "auto_return_disconnect",
+            "autoReturnDisconnect",
+            "callingPackage",
+            "value",
+            "existingValue",
+            "variant",
+            "phone",
+            "total_duration",
+            "successful_calls",
+            "form_valid",
+            "records"
+        )
     }
 
     private val regionHint: String by lazy {
@@ -135,4 +167,41 @@ class Config(context: Context) : BaseConfig(context) {
     var alwaysShowFullscreen: Boolean
         get() = prefs.getBoolean(ALWAYS_SHOW_FULLSCREEN, false)
         set(alwaysShowFullscreen) = prefs.edit().putBoolean(ALWAYS_SHOW_FULLSCREEN, alwaysShowFullscreen).apply()
+
+    var adminPinHash: String?
+        get() = prefs.getString(ADMIN_PIN_HASH, null)
+        set(value) = prefs.edit().putString(ADMIN_PIN_HASH, value).apply()
+
+    var adminPinFailedAttempts: Int
+        get() = prefs.getInt(ADMIN_PIN_FAILED_ATTEMPTS, 0)
+        set(value) = prefs.edit().putInt(ADMIN_PIN_FAILED_ATTEMPTS, value).apply()
+
+    var adminPinLockoutUntil: Long
+        get() = prefs.getLong(ADMIN_PIN_LOCKOUT_UNTIL, 0L)
+        set(value) = prefs.edit().putLong(ADMIN_PIN_LOCKOUT_UNTIL, value).apply()
+
+    var reservedKeys: Set<String>
+        get() = prefs.getStringSet(RESERVED_KEYS, DEFAULT_RESERVED_KEYS) ?: DEFAULT_RESERVED_KEYS
+        set(value) = prefs.edit().putStringSet(RESERVED_KEYS, value).apply()
+
+    var centralBaseUrlOverride: String?
+        get() = prefs.getString(CENTRAL_BASE_URL_OVERRIDE, null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit().putString(CENTRAL_BASE_URL_OVERRIDE, value?.takeIf { it.isNotBlank() }).apply()
+
+    var syncLogRetentionDays: Int
+        get() = prefs.getInt(SYNC_LOG_RETENTION_DAYS, 30).coerceIn(1, 365)
+        set(value) = prefs.edit().putInt(SYNC_LOG_RETENTION_DAYS, value.coerceIn(1, 365)).apply()
+
+    var lastOdkBaseUrl: String?
+        get() = prefs.getString(LAST_ODK_BASE_URL, null)
+        set(value) = prefs.edit().putString(LAST_ODK_BASE_URL, value?.takeIf { it.isNotBlank() }).apply()
+
+    var lastOdkProjectId: String?
+        get() = prefs.getString(LAST_ODK_PROJECT_ID, null)
+        set(value) = prefs.edit().putString(LAST_ODK_PROJECT_ID, value?.takeIf { it.isNotBlank() }).apply()
+
+    var lastOdkDataset: String?
+        get() = prefs.getString(LAST_ODK_DATASET, null)
+        set(value) = prefs.edit().putString(LAST_ODK_DATASET, value?.takeIf { it.isNotBlank() }).apply()
+
 }

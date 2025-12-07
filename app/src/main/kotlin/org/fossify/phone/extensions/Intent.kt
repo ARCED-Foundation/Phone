@@ -31,15 +31,17 @@ fun Intent.isValidOdkIntent(): Boolean {
     val isOdk = isOdkIntent()
     if (!isOdk) return false
 
-    // For ODK integration, we're more flexible - just need phone number or value
     val hasPhoneExtra = hasExtra("phone")
+    val hasPhoneNumberExtra = hasExtra("phoneNumber")
     val hasValueExtra = hasExtra("value")
     val hasUriData = data != null && data.toString().contains("tel:")
 
-    android.util.Log.d("ODK_INTEGRATION", "isValidOdkIntent: hasPhoneExtra=$hasPhoneExtra, hasValueExtra=$hasValueExtra, hasUriData=$hasUriData")
+    android.util.Log.d(
+        "ODK_INTEGRATION",
+        "isValidOdkIntent: hasPhoneExtra=$hasPhoneExtra, hasPhoneNumberExtra=$hasPhoneNumberExtra, hasValueExtra=$hasValueExtra, hasUriData=$hasUriData"
+    )
 
-    // Valid if it has at least one of: phone extra, value extra, or tel: URI
-    val result = hasPhoneExtra || hasValueExtra || hasUriData
+    val result = hasPhoneExtra || hasPhoneNumberExtra || hasValueExtra || hasUriData
     android.util.Log.d("ODK_INTEGRATION", "isValidOdkIntent final result: $result")
     return result
 }
@@ -48,13 +50,14 @@ fun Intent.isValidOdkIntent(): Boolean {
  * Extracts phone number from ODK intent with proper validation
  */
 fun Intent.getOdkPhoneNumber(): String? {
-    // Try phone extra first
-    if (hasExtra("phone")) {
-        val phone = getStringExtra("phone")
-        // Validate and clean phone number
-        phone?.takeIf { it.isNotBlank() }?.let { cleanPhoneNumber(it) }?.also {
-            android.util.Log.d("ODK_INTEGRATION", "Got phone from extra: $it")
-            return it
+    val phoneKeys = listOf("phone", "phoneNumber")
+    phoneKeys.forEach { key ->
+        if (hasExtra(key)) {
+            val phone = getStringExtra(key)
+            phone?.takeIf { it.isNotBlank() }?.let { cleanPhoneNumber(it) }?.also {
+                android.util.Log.d("ODK_INTEGRATION", "Got phone from extra '$key': $it")
+                return it
+            }
         }
     }
 
@@ -103,9 +106,8 @@ fun Intent.getOdkBuildVariant(): String {
 fun isValidPhoneNumber(phoneNumber: String?): Boolean {
     if (phoneNumber == null || phoneNumber.isBlank()) return false
 
-    // Basic E.164 validation
-    // + followed by 1-15 digits
-    return phoneNumber.matches(Regex("^\\+[1-9]\\d{1,14}$"))
+    // Accept optional '+' and 7-15 digits
+    return phoneNumber.matches(Regex("^\\+?[1-9]\\d{6,14}$"))
 }
 
 /**

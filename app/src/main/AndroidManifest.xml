@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:installLocation="auto">
 
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.WRITE_CONTACTS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
@@ -22,6 +23,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <uses-permission
         android:name="android.permission.USE_FINGERPRINT"
@@ -38,7 +45,7 @@
     </queries>
 
     <application
-        android:name="org.fossify.commons.FossifyApp"
+        android:name="org.fossify.phone.PhoneApplication"
         android:allowBackup="true"
         android:appCategory="productivity"
         android:icon="@mipmap/ic_launcher"
@@ -111,6 +118,47 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".activities.AdminSetupActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/admin_setup_title"
+            android:parentActivityName=".activities.MainActivity" />
+
+        <activity
+            android:name=".activities.CredentialsSetupActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/credentials_setup_title"
+            android:parentActivityName=".activities.AdminSetupActivity" />
+
+        <activity
+            android:name=".activities.SyncLogActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/sync_logs_title"
+            android:parentActivityName=".activities.MainActivity" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <activity
+            android:name=".activities.SurveyDataCollectionActivity"
+            android:exported="false"
+            android:label="@string/survey_data_title" />
+
+        <activity
+            android:name=".activities.PostCallMetadataActivity"
+            android:exported="false"
+            android:label="@string/post_call_form_title" />
 
         <activity
             android:name="org.fossify.phone.activities.CallActivity"
@@ -202,6 +250,16 @@
                 <action android:name="android.telecom.CallScreeningService" />
             </intent-filter>
         </service>
+
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
+        <service
+            android:name=".services.CallSyncService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <receiver
             android:name=".receivers.CallActionReceiver"

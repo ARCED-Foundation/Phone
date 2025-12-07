@@ -18,12 +18,49 @@
         android:scrollbars="none"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
+        <androidx.appcompat.widget.LinearLayoutCompat
+            android:id="@+id/main_sync_status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_margin="@dimen/medium_margin"
+            android:background="@drawable/pill_background"
+            android:orientation="horizontal"
+            android:padding="@dimen/normal_margin"
+            android:visibility="gone"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackgroundBorderless"
+            app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageView
+            android:id="@+id/main_sync_status_icon"
+            android:layout_width="@dimen/normal_icon_size"
+            android:layout_height="@dimen/normal_icon_size"
+            android:contentDescription="@null"
+            android:layout_gravity="center_vertical"
+            android:src="@android:drawable/stat_notify_sync" />
+
+        <org.fossify.commons.views.MyTextView
+            android:id="@+id/main_sync_status_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/small_margin"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:gravity="center_vertical"
+            android:maxLines="1"
+            android:textSize="@dimen/body_text_size"
+            android:textStyle="bold" />
+    </androidx.appcompat.widget.LinearLayoutCompat>
+
         <org.fossify.commons.views.MyViewPager
             android:id="@+id/view_pager"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             app:layout_constraintBottom_toTopOf="@+id/main_tabs_holder"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toBottomOf="@+id/main_sync_status" />
 
         <org.fossify.commons.views.MyFloatingActionButton
             android:id="@+id/main_dialpad_button"

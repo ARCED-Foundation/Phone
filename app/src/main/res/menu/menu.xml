@@ -35,6 +35,16 @@
         android:title="@string/column_count"
         app:showAsAction="never" />
     <item
+        android:id="@+id/admin_settings"
+        android:icon="@drawable/ic_settings_cog_vector"
+        android:title="@string/admin_setup_title"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/sync_logs"
+        android:icon="@drawable/ic_sync_log"
+        android:title="@string/sync_logs"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/settings"
         android:icon="@drawable/ic_settings_cog_vector"
         android:title="@string/settings"

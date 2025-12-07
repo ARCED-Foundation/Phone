@@ -31,7 +31,22 @@
       "Bash(./.specify/scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks)",
       "Bash(git rev-parse:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(./specify/scripts/powershell/check-prerequisites.ps1:*)",
+      "Bash(powershell:*)",
+      "Bash(..specifyscriptspowershellcheck-prerequisites.ps1 -Json -RequireTasks -IncludeTasks)",
+      "Bash(echo:*)",
+      "Bash(kotlinc:*)",
+      "Bash(kotlin verify_retry_implementation.kt:*)",
+      "Bash(dir:*)",
+      "Bash(if [:*)",
+      "Bash(then find specs/001-central-call-sync/checklists -name \"*.md\" -type f)",
+      "Bash(else:*)",
+      "Bash(fi:*)",
+      "Bash(then find specs/001-central-call-sync/contracts -type f)",
+      "Bash(then echo \"research.md exists\")",
+      "Bash(then echo \"quickstart.md exists\")",
+      "Bash(adb install:*)"
     ],
     "deny": [],
     "ask": []

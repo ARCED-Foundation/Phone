@@ -16,6 +16,14 @@ Fossify Phone is a privacy-focused, open-source Android dialer/caller applicatio
 - Call blocking capabilities
 - Full Material Design 3 theming support
 
+### Central Call Logging Integration
+The repository now embeds the CATI call logger integration:
+- Call attempts are recorded (answered, no-answer, busy, failed, rejected) into a Room `CallLog` entity and deduplicated via `CallLogger`.
+- Pending syncs target ODK Central with configuration from the PIN-protected admin flow + reserved-key filtering, and retries use exponential backoff work requests.
+- Manual fallback support surfaces an “End call & record” confirmation dialog that reuses the standard logging + pending sync pipeline when auto detection misses a call.
+- Performance, battery, and reliability helpers track call-detection latency (`PerformanceMonitor`), defer work on low battery (`BatteryOptimizer`), capture failure summaries (`CallDetectionAnalytics`), and log crash metadata (`CrashTracker`).
+- Comprehensive verification suites (`CallLoggingStoriesUnitTestSuite`, `CallLoggingStoriesInstrumentedTestSuite`, `QuickstartIntegrationTest`) ensure the admin path, manual dialog, and sync failure handling are exercised before data leaves the device.
+
 ## Common Development Commands
 
 ### Building the App
@@ -199,6 +207,12 @@ The app requires multiple critical permissions declared in `AndroidManifest.xml`
 - `FOREGROUND_SERVICE` - For reliable call service
 - `POST_NOTIFICATIONS` - For call notifications (Android 13+)
 - `USE_FULL_SCREEN_INTENT` - For full-screen incoming call display
+
+### Call Logging Workflow Notes
+- `CallLogger` deduplicates call events within a short window before persisting `CallLog` entities and scheduling `PendingSync` entries.
+- Background sync work is orchestrated through `CallSyncService`, `WorkManagerHelper`, and `OdkSyncWorker`, which honor constraints, battery-aware delays, and exponential backoff.
+- Manual fallback is gated by `ManualRecordConfirmationDialog`, and it reuses the same helpers so the recorded call gets the standard payload and pending sync treatment.
+- Coverage and quality guardrails (`jacocoReport`, `jacocoTestCoverageVerification`, `validateCallSync`) ensure lint, detekt, and coverage thresholds are enforced before syncing to Central.
 
 ### Call Flow Architecture
 1. **Incoming Call** → System → CallService → CallManager → CallActivity

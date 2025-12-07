@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.ShortcutInfo
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.Icon
@@ -14,8 +15,13 @@ import android.provider.Settings
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.annotation.ColorInt
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.viewpager.widget.ViewPager
 import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collect
 import me.grantland.widget.AutofitHelper
 import org.fossify.commons.dialogs.ChangeViewTypeDialog
 import org.fossify.commons.dialogs.ConfirmationDialog
@@ -40,8 +46,10 @@ import org.fossify.phone.fragments.ContactsFragment
 import org.fossify.phone.fragments.FavoritesFragment
 import org.fossify.phone.fragments.MyViewPagerFragment
 import org.fossify.phone.fragments.RecentsFragment
+import org.fossify.phone.services.CallSyncService
 import org.fossify.phone.helpers.OPEN_DIAL_PAD_AT_LAUNCH
 import org.fossify.phone.helpers.RecentsHelper
+import org.fossify.phone.helpers.SyncStatusTracker
 import org.fossify.phone.helpers.tabsList
 import org.fossify.phone.models.Events
 import org.greenrobot.eventbus.EventBus
@@ -58,6 +66,7 @@ class MainActivity : SimpleActivity() {
     private var storedFontSize = 0
     private var storedStartNameWithSurname = false
     var cachedContacts = ArrayList<Contact>()
+    private var syncStatusJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +75,8 @@ class MainActivity : SimpleActivity() {
         setupOptionsMenu()
         refreshMenuItems()
         setupEdgeToEdge(padBottomImeAndSystem = listOf(binding.mainTabsHolder))
+        startSyncStatusObserver()
+        binding.mainSyncStatus.setOnClickListener { triggerManualSync() }
 
         EventBus.getDefault().register(this)
         launchedDialer = savedInstanceState?.getBoolean(OPEN_DIAL_PAD_AT_LAUNCH) ?: false
@@ -112,6 +123,13 @@ class MainActivity : SimpleActivity() {
             config.lastUsedViewPagerPage = 0
             System.exit(0)
             return
+        }
+
+        try {
+            SurveyDataCollectionActivity.launchPendingIfAny(this)
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to launch survey data collection", e)
+            // Don't crash the app, just log the error and continue
         }
 
         updateMenuColors()
@@ -191,6 +209,7 @@ class MainActivity : SimpleActivity() {
     override fun onDestroy() {
         super.onDestroy()
         EventBus.getDefault().unregister(this)
+        stopSyncStatusObserver()
     }
 
     private fun refreshMenuItems() {
@@ -229,6 +248,8 @@ class MainActivity : SimpleActivity() {
                     R.id.sort -> showSortingDialog(showCustomSorting = getCurrentFragment() is FavoritesFragment)
                     R.id.filter -> showFilterDialog()
                     R.id.more_apps_from_us -> launchMoreAppsFromUsIntent()
+                    R.id.admin_settings -> launchAdminSettings()
+                    R.id.sync_logs -> launchSyncLogs()
                     R.id.settings -> launchSettings()
                     R.id.change_view_type -> changeViewType()
                     R.id.column_count -> changeColumnCount()
@@ -554,6 +575,11 @@ class MainActivity : SimpleActivity() {
         }
     }
 
+    private fun launchAdminSettings() {
+        hideKeyboard()
+        startActivity(Intent(applicationContext, AdminSetupActivity::class.java))
+    }
+
     private fun launchSettings() {
         hideKeyboard()
         startActivity(Intent(applicationContext, SettingsActivity::class.java))
@@ -637,5 +663,63 @@ class MainActivity : SimpleActivity() {
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun refreshCallLog(event: Events.RefreshCallLog) {
         getRecentsFragment()?.refreshItems()
+    }
+
+    private fun startSyncStatusObserver() {
+        syncStatusJob?.cancel()
+        syncStatusJob = lifecycleScope.launchWhenStarted {
+            SyncStatusTracker.create(this@MainActivity).collect { status ->
+                updateSyncStatusBar(status)
+            }
+        }
+    }
+
+    private fun stopSyncStatusObserver() {
+        syncStatusJob?.cancel()
+        syncStatusJob = null
+    }
+
+    private fun updateSyncStatusBar(status: SyncStatusTracker.SyncStatus) {
+        when {
+            !status.lastError.isNullOrBlank() -> showSyncStatusBar(
+                message = getString(R.string.phone_sync_status_failed, status.lastError),
+                color = ContextCompat.getColor(this, R.color.color_missed_call)
+            )
+            status.pendingCount > 0 -> showSyncStatusBar(
+                message = getString(R.string.phone_sync_status_pending, status.pendingCount),
+                color = ContextCompat.getColor(this, R.color.color_incoming_call)
+            )
+            else -> hideSyncStatusBar()
+        }
+    }
+
+    private fun showSyncStatusBar(message: String, @ColorInt color: Int) {
+        binding.mainSyncStatusText.text = message
+        binding.mainSyncStatusIcon.imageTintList = ColorStateList.valueOf(color)
+        binding.mainSyncStatusText.setTextColor(color)
+        binding.mainSyncStatus.beVisible()
+    }
+
+    private fun hideSyncStatusBar() {
+        binding.mainSyncStatus.beGone()
+    }
+
+    private fun triggerManualSync() {
+        try {
+            val intent = Intent(this, CallSyncService::class.java)
+            ContextCompat.startForegroundService(this, intent)
+            toast(R.string.phone_sync_status_retrying)
+        } catch (e: Exception) {
+            toast(R.string.phone_sync_status_retry_failed)
+        }
+    }
+
+    private fun launchSyncLogs() {
+        try {
+            startActivity(Intent(this, SyncLogActivity::class.java))
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Unable to open sync logs", e)
+            toast(R.string.connection_failed)
+        }
     }
 }

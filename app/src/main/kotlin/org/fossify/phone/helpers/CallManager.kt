@@ -6,29 +6,29 @@ import android.content.Intent
 import android.os.Handler
 import android.telecom.Call
 import android.telecom.CallAudioState
+import android.telecom.DisconnectCause
 import android.telecom.InCallService
 import android.telecom.VideoProfile
+import android.telephony.PhoneNumberUtils
+import android.telephony.TelephonyManager
 import org.fossify.phone.extensions.getStateCompat
 import org.fossify.phone.extensions.hasCapability
 import org.fossify.phone.extensions.isConference
-import org.fossify.phone.extensions.formatCurrentTimeIso8601
-import org.fossify.phone.extensions.CALL_DATA_SEPARATOR
-import org.fossify.phone.extensions.CALL_DIRECTION_OUTGOING
-import org.fossify.phone.extensions.CALL_DIRECTION_INCOMING
+import org.fossify.phone.extensions.isOutgoing
 import org.fossify.phone.models.AudioRoute
 import org.fossify.phone.models.OdkCallTrackingInfo
 import org.fossify.phone.models.OdkCallRecord
 import org.fossify.phone.models.ODKSession
 import org.fossify.phone.models.CallDirection
 import org.fossify.phone.models.SessionStatus
+import org.fossify.phone.models.CallOutcome
 import org.fossify.phone.extensions.saveOdkSession
 import org.fossify.phone.extensions.clearOdkSessionState
 import org.fossify.phone.extensions.ODK_SESSION_TIMEOUT_MS
-import org.fossify.phone.extensions.concatenateCallValues
-import android.util.Base64
 import kotlinx.serialization.json.Json
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArraySet
+import org.fossify.phone.utils.PerformanceMonitor
 
 // inspired by https://github.com/Chooloo/call_manage
 class CallManager {
@@ -37,7 +37,7 @@ class CallManager {
         var inCallService: InCallService? = null
         private var call: Call? = null
         private val calls = mutableListOf<Call>()
-        private val listeners = CopyOnWriteArraySet<CallManagerListener>()
+        internal val listeners = CopyOnWriteArraySet<CallManagerListener>()
 
         // Track per-call state history for proper lifecycle management
         private val callStateHistory = mutableMapOf<Call, CallStateHistory>()
@@ -54,7 +54,9 @@ class CallManager {
             var previousState: Int = Call.STATE_DISCONNECTED,
             var hasNotifiedStart: Boolean = false,
             var hasNotifiedEnd: Boolean = false,
-            var isInStateUpdate: Boolean = false  // Prevent concurrent notifications
+            var isInStateUpdate: Boolean = false,  // Prevent concurrent notifications
+            var startTimeMillis: Long? = null,
+            var connectTimeMillis: Long? = null
         )
 
         fun onCallAdded(call: Call) {
@@ -188,14 +190,16 @@ class CallManager {
 
         // Handle individual call state changes with proper lifecycle tracking
         private fun handleCallStateChange(call: Call, newState: Int) {
-            val stateHistory = callStateHistory[call]
-            if (stateHistory == null) {
-                // Initialize state history if missing
-                callStateHistory[call] = CallStateHistory(previousState = newState)
-                return
-            }
+            val detectionStart = PerformanceMonitor.startCallDetection()
+            try {
+                val stateHistory = callStateHistory[call]
+                if (stateHistory == null) {
+                    // Initialize state history if missing
+                    callStateHistory[call] = CallStateHistory(previousState = newState)
+                    return
+                }
 
-            val oldState = stateHistory.previousState
+                val oldState = stateHistory.previousState
 
             // Only process meaningful transitions
             if (oldState != newState) {
@@ -203,6 +207,9 @@ class CallManager {
 
                 // Handle call start transitions (IDLE -> DIALING/CONNECTING/ACTIVE)
                 if (isStartTransition(oldState, newState)) {
+                    if (stateHistory.startTimeMillis == null) {
+                        stateHistory.startTimeMillis = System.currentTimeMillis()
+                    }
                     if (!stateHistory.hasNotifiedStart) {
                         notifyCallStartedEvents(call)
                         stateHistory.hasNotifiedStart = true
@@ -211,20 +218,42 @@ class CallManager {
 
                 // Handle call active transition (DIALING/CONNECTING -> ACTIVE)
                 if (isCallActiveTransition(oldState, newState)) {
+                    if (stateHistory.connectTimeMillis == null) {
+                        stateHistory.connectTimeMillis = System.currentTimeMillis()
+                    }
                     notifyCallActiveEvents(call)
                 }
 
-                // Handle call end transitions (ACTIVE/DIALING/CONNECTING -> DISCONNECTED/DISCONNECTING)
+                // Handle call end transitions and detect call outcome
                 if (isEndTransition(oldState, newState)) {
                     if (!stateHistory.hasNotifiedEnd) {
+                        val outcome = detectCallOutcome(call, oldState, newState)
+                        val endTimeMs = System.currentTimeMillis()
+                        val duration = calculateCallDuration(call, stateHistory, endTimeMs)
+                        val startTime = stateHistory.startTimeMillis
+                            ?: (endTimeMs - (duration * 1000).toLong())
+                        val outcomeDetail = buildOutcomeDetail(
+                            call = call,
+                            outcome = outcome,
+                            durationSeconds = duration,
+                            startTimeMs = startTime,
+                            endTimeMs = endTimeMs,
+                            oldState = oldState,
+                            newState = newState,
+                            connectTimeMs = stateHistory.connectTimeMillis
+                        )
                         notifyCallEndedEvents()
+                        notifyCallOutcomeEvents(call, outcome, outcomeDetail, duration, startTime, endTimeMs)
                         stateHistory.hasNotifiedEnd = true
                     }
                 }
             }
 
-            // Always update the previous state
-            stateHistory.previousState = newState
+                // Always update the previous state
+                stateHistory.previousState = newState
+            } finally {
+                PerformanceMonitor.endCallDetection(detectionStart)
+            }
         }
 
         // Check if this is a call start transition
@@ -238,7 +267,8 @@ class CallManager {
         // Check if this is a call active transition (when call becomes connected)
         private fun isCallActiveTransition(oldState: Int, newState: Int): Boolean {
             return (oldState == Call.STATE_DIALING ||
-                    oldState == Call.STATE_CONNECTING) &&
+                    oldState == Call.STATE_CONNECTING ||
+                    oldState == Call.STATE_RINGING) &&
                    newState == Call.STATE_ACTIVE
         }
 
@@ -362,24 +392,27 @@ class CallManager {
         }
 
         private fun sendOdkReturnBroadcast(session: ODKSession) {
-            val callingPackage = session.callingPackage ?: return
-            android.util.Log.d("CallManager", "Sending ODK return broadcast to $callingPackage")
-
-            val intent = Intent("org.fossify.phone.ODK_RETURN_FULL").apply {
-                setPackage(callingPackage)
+            val payloadIntent = Intent("org.fossify.phone.ODK_RETURN_FULL").apply {
                 putExtra("value", getConcatenatedOdkValue())
                 putExtra("total_duration", session.totalDuration)
                 putExtra("successful_calls", session.successfulCallCount)
                 putExtra("field_id", session.fieldId)
                 putExtra("form_valid", true)
 
-                // Serialize records as JSON
                 val recordsJson = kotlinx.serialization.json.Json.encodeToString(session.callRecords)
                 putExtra("records", recordsJson)
             }
 
-            odkSessionContext?.sendBroadcast(intent)
-            android.util.Log.d("CallManager", "ODK return broadcast sent with value length: ${getConcatenatedOdkValue().length}")
+            odkSessionContext?.sendBroadcast(payloadIntent)
+            android.util.Log.d("CallManager", "ODK return broadcast broadcasted for local handlers")
+
+            session.callingPackage?.let { callingPackage ->
+                android.util.Log.d("CallManager", "Sending ODK return broadcast to $callingPackage")
+                val externalIntent = Intent(payloadIntent).apply {
+                    setPackage(callingPackage)
+                }
+                odkSessionContext?.sendBroadcast(externalIntent)
+            }
         }
 
         fun getPrimaryCall(): Call? {
@@ -487,6 +520,7 @@ class CallManager {
             odkSession = null
             activeOdkCallTracking.clear()
             odkSessionContext = null
+            OdkIntentStateHolder.clear()
             return completedSession
         }
 
@@ -569,27 +603,41 @@ class CallManager {
             return record
         }
 
-        fun getOdkCallDataForConcatenation(): String {
-            val callRecords = odkSession?.callRecords ?: emptyList()
-            val callData = callRecords.joinToString(CALL_DATA_SEPARATOR) { record ->
-                formatCallDataForConcatenation(
-                    phoneNumber = record.phoneNumber,
-                    direction = if (record.direction == CallDirection.OUTGOING) CALL_DIRECTION_OUTGOING else CALL_DIRECTION_INCOMING,
-                    duration = record.duration,
-                    timestamp = record.startTime
-                )
-            }
-            return callData
-        }
-
         fun getConcatenatedOdkValue(): String {
             val session = odkSession ?: return ""
-            if (session.callRecords.isEmpty()) {
-                return session.existingValue ?: ""
+            val latestNumber = session.callRecords.lastOrNull()?.phoneNumber ?: session.phoneNumber
+            val formattedNumber = formatOdkPhoneNumber(latestNumber)
+            return when {
+                formattedNumber != null -> "Outgoing call to $formattedNumber"
+                !session.existingValue.isNullOrBlank() -> session.existingValue
+                else -> ""
             }
-            val existingValue = session.existingValue ?: ""
-            val newCallData = getOdkCallDataForConcatenation()
-            return concatenateCallValues(existingValue, newCallData)
+        }
+
+        private fun formatOdkPhoneNumber(rawNumber: String?): String? {
+            val cleaned = rawNumber?.takeIf { it.isNotBlank() }?.trim() ?: return null
+            if (cleaned.startsWith("+")) {
+                return cleaned
+            }
+            val formatted = formatNumberToE164(cleaned)
+            if (!formatted.isNullOrBlank()) {
+                return formatted
+            }
+            return if (cleaned.all { it.isDigit() }) {
+                "+$cleaned"
+            } else {
+                null
+            }
+        }
+
+        private fun formatNumberToE164(number: String): String? {
+            val region = odkSessionContext?.let { context ->
+                val telephonyManager = context.getSystemService(TelephonyManager::class.java)
+                telephonyManager?.simCountryIso?.takeIf { it.isNotBlank() }
+                    ?: telephonyManager?.networkCountryIso?.takeIf { it.isNotBlank() }
+            } ?: Locale.getDefault().country
+            val normalizedRegion = region.uppercase(Locale.US).takeIf { it.isNotBlank() } ?: "US"
+            return PhoneNumberUtils.formatNumberToE164(number, normalizedRegion)
         }
 
         fun resetOdkSession() {
@@ -597,37 +645,13 @@ class CallManager {
             activeOdkCallTracking.clear()
             odkSessionContext?.clearOdkSessionState()
             odkSessionContext = null
+            OdkIntentStateHolder.clear()
         }
 
         fun updateOdkSessionState(isActive: Boolean = false) {
             odkSession = odkSession?.copy(isActive = isActive)
             odkSessionContext?.let { context ->
                 context.saveOdkSession(odkSession!!)
-            }
-        }
-
-        private fun formatCallDataForConcatenation(
-            phoneNumber: String,
-            direction: String,
-            duration: Double,
-            timestamp: Long
-        ): String {
-            val formattedTimestamp = org.fossify.phone.extensions.formatTimestampIso8601(timestamp).replace("Z", ".000Z")
-            return when (direction) {
-                CALL_DIRECTION_INCOMING -> String.format(
-                    Locale.US,
-                    "In: %s; Duration: %.2fs; Started: %s",
-                    phoneNumber,
-                    duration,
-                    formattedTimestamp
-                )
-                else -> String.format(
-                    Locale.US,
-                    "Out: %s; Duration: %.2fs; Started: %s",
-                    phoneNumber,
-                    duration,
-                    formattedTimestamp
-                )
             }
         }
 
@@ -646,6 +670,149 @@ class CallManager {
                 return false
             }
         }
+
+        // Detect call outcome based on state transition
+        private fun detectCallOutcome(call: Call, oldState: Int, newState: Int): CallOutcome {
+            return when (newState) {
+                Call.STATE_DISCONNECTED, Call.STATE_DISCONNECTING -> {
+                    when {
+                        // Call was active when disconnected - answered
+                        oldState == Call.STATE_ACTIVE || oldState == Call.STATE_HOLDING -> CallOutcome.ANSWERED
+                        // Call was ringing when disconnected - no answer
+                        oldState == Call.STATE_RINGING -> CallOutcome.NO_ANSWER
+                        // Call was in dialing/connecting when disconnected - failed
+                        oldState == Call.STATE_DIALING || oldState == Call.STATE_CONNECTING -> CallOutcome.FAILED
+                        // Call was held when disconnected - still considered answered
+                        oldState == Call.STATE_HOLDING -> CallOutcome.ANSWERED
+                        else -> CallOutcome.FAILED
+                    }
+                }
+                Call.STATE_ACTIVE -> {
+                    // Call became active - answered
+                    CallOutcome.ANSWERED
+                }
+                Call.STATE_HOLDING -> {
+                    // Call was put on hold - answered (since it was connected)
+                    CallOutcome.ANSWERED
+                }
+                else -> CallOutcome.FAILED
+            }
+        }
+
+        // Calculate call duration in seconds
+        private fun calculateCallDuration(
+            call: Call,
+            stateHistory: CallStateHistory,
+            endTimeMs: Long
+        ): Double {
+            val tracked = CallManager.activeOdkCallTracking.values.find { it.call == call }
+            val connectTime = stateHistory.connectTimeMillis ?: tracked?.connectTime
+            val startTime = stateHistory.startTimeMillis ?: tracked?.startTime
+
+            val baselineStart = connectTime ?: startTime
+            if (baselineStart == null) return 0.0
+
+            val durationMs = (endTimeMs - baselineStart).coerceAtLeast(0)
+            return durationMs / 1000.0
+        }
+
+        // Get failure reason for failed calls
+        private fun getCallFailureReason(oldState: Int, newState: Int): String? {
+            return when (newState) {
+                Call.STATE_DISCONNECTED, Call.STATE_DISCONNECTING -> when (oldState) {
+                    Call.STATE_RINGING -> "Call not answered"
+                    Call.STATE_DIALING, Call.STATE_CONNECTING -> "Call cancelled before connecting"
+                    Call.STATE_ACTIVE, Call.STATE_HOLDING -> "Call ended while active"
+                    else -> "Call ended from state ${callStateToString(oldState)}"
+                }
+                else -> "Call ended from state ${callStateToString(oldState)}"
+            }
+        }
+
+        private fun describeDisconnectCause(call: Call): String? {
+            val cause = call.details.disconnectCause ?: return null
+            val explicit = cause.description?.takeIf { it.isNotBlank() }?.toString()
+                ?: cause.label?.takeIf { it.isNotBlank() }?.toString()
+            if (!explicit.isNullOrBlank()) return explicit
+
+            return when (cause.code) {
+                DisconnectCause.LOCAL -> "Local hangup"
+                DisconnectCause.REMOTE -> "Remote hangup"
+                DisconnectCause.BUSY -> "Line busy"
+                DisconnectCause.MISSED -> "Call missed"
+                DisconnectCause.REJECTED -> "Call rejected"
+                DisconnectCause.ERROR -> "Call error"
+                DisconnectCause.CANCELED -> "Call cancelled"
+                else -> cause.reason?.takeIf { it.isNotBlank() }
+            }
+        }
+
+        private fun formatSeconds(seconds: Double): String {
+            return String.format(Locale.US, "%.1fs", seconds)
+        }
+
+        private fun buildOutcomeDetail(
+            call: Call,
+            outcome: CallOutcome,
+            durationSeconds: Double,
+            startTimeMs: Long,
+            endTimeMs: Long,
+            oldState: Int,
+            newState: Int,
+            connectTimeMs: Long?
+        ): String {
+            val segments = mutableListOf<String>()
+            val direction = if (call.isOutgoing()) "outgoing call" else "incoming call"
+            segments.add(direction)
+
+            when (outcome) {
+                CallOutcome.ANSWERED -> {
+                    segments.add("ended normally")
+                    if (durationSeconds > 0) {
+                        segments.add("duration ${formatSeconds(durationSeconds)}")
+                    }
+                }
+                CallOutcome.NO_ANSWER -> {
+                    segments.add("no answer")
+                    val ringSeconds = ((connectTimeMs ?: endTimeMs) - startTimeMs).coerceAtLeast(0) / 1000.0
+                    if (ringSeconds > 0) {
+                        segments.add("rang ${formatSeconds(ringSeconds)}")
+                    }
+                }
+                CallOutcome.BUSY -> {
+                    segments.add("line busy")
+                }
+                CallOutcome.FAILED -> {
+                    getCallFailureReason(oldState, newState)?.let { segments.add(it) }
+                }
+                CallOutcome.REJECTED -> {
+                    segments.add("call rejected")
+                }
+            }
+
+            describeDisconnectCause(call)?.let { segments.add("disconnect: $it") }
+            segments.add("states ${callStateToString(oldState)} -> ${callStateToString(newState)}")
+
+            return segments.joinToString(" | ")
+        }
+
+        // Notify listeners about call outcome
+        private fun notifyCallOutcomeEvents(
+            call: Call,
+            outcome: CallOutcome,
+            outcomeDetail: String?,
+            durationSeconds: Double,
+            startTimeMs: Long,
+            endTimeMs: Long
+        ) {
+            val number = getPhoneNumber(call)
+
+            android.util.Log.d("CallManager", "Call outcome detected: $outcome, number: $number, duration: ${durationSeconds}s")
+
+            for (listener in CallManager.listeners) {
+                listener.onCallOutcomeDetected(call, outcome, outcomeDetail, durationSeconds, startTimeMs, endTimeMs)
+            }
+        }
     }
 }
 
@@ -662,6 +829,16 @@ interface CallManagerListener {
     // Enhanced methods that pass Call objects for reliable tracking
     fun onCallStarted(call: Call, number: String, isOutgoing: Boolean)
     fun onCallActive(call: Call, number: String, isOutgoing: Boolean)
+
+    // Call logging methods
+    fun onCallOutcomeDetected(
+        call: Call,
+        outcome: CallOutcome,
+        outcomeDetail: String?,
+        durationSeconds: Double,
+        startTimeMs: Long,
+        endTimeMs: Long
+    )
 }
 
 // Helper function to extract phone number from call details

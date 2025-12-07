@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="@dimen/activity_margin"
+        android:paddingBottom="@dimen/activity_margin">
+
+        <TextView
+            android:id="@+id/post_call_message"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/activity_margin"
+            android:layout_marginEnd="@dimen/activity_margin"
+            android:layout_marginBottom="@dimen/medium_margin"
+            android:text="@string/post_call_form_message"
+            android:textAppearance="?attr/textAppearanceBody1" />
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/post_call_survey_switch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/activity_margin"
+            android:layout_marginEnd="@dimen/activity_margin"
+            android:layout_marginBottom="@dimen/medium_margin"
+            android:text="@string/post_call_survey_label" />
+
+        <org.fossify.commons.views.MyTextInputLayout
+            android:id="@+id/post_call_unique_id_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/medium_margin"
+            android:hint="@string/post_call_unique_id_label"
+            android:paddingStart="@dimen/activity_margin"
+            android:paddingEnd="@dimen/activity_margin">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/post_call_unique_id"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textCapCharacters"
+                android:singleLine="true"
+                android:textCursorDrawable="@null"
+                android:textSize="@dimen/bigger_text_size" />
+        </org.fossify.commons.views.MyTextInputLayout>
+
+        <org.fossify.commons.views.MyTextInputLayout
+            android:id="@+id/post_call_enumerator_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/medium_margin"
+            android:hint="@string/post_call_enumerator_label"
+            android:paddingStart="@dimen/activity_margin"
+            android:paddingEnd="@dimen/activity_margin">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/post_call_enumerator"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textCapCharacters"
+                android:singleLine="true"
+                android:textCursorDrawable="@null"
+                android:textSize="@dimen/bigger_text_size" />
+        </org.fossify.commons.views.MyTextInputLayout>
+
+        <org.fossify.commons.views.MyTextInputLayout
+            android:id="@+id/post_call_note_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/medium_margin"
+            android:hint="@string/post_call_note_label"
+            android:paddingStart="@dimen/activity_margin"
+            android:paddingEnd="@dimen/activity_margin">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/post_call_note"
+                android:layout_width="match_parent"
+                android:layout_height="120dp"
+                android:gravity="top|start"
+                android:inputType="textMultiLine"
+                android:maxLines="5"
+                android:minLines="3"
+                android:textCursorDrawable="@null"
+                android:textSize="@dimen/bigger_text_size" />
+        </org.fossify.commons.views.MyTextInputLayout>
+    </LinearLayout>
+</ScrollView>

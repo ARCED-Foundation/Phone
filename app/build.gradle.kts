@@ -1,3 +1,5 @@
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
+import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.kotlin.konan.properties.Properties
@@ -8,6 +10,8 @@ plugins {
     alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.detekt)
+    id("jacoco")
+    kotlin("kapt")
 }
 
 val keystorePropertiesFile: File = rootProject.file("keystore.properties")
@@ -121,6 +125,10 @@ android {
         lintConfig = rootProject.file("lint.xml")
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     bundle {
         language {
             enableSplit = false
@@ -143,5 +151,94 @@ dependencies {
     implementation(libs.eventbus)
     implementation(libs.libphonenumber)
     implementation(libs.geocoder)
+
+    // Room dependencies
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    kapt(libs.room.compiler)
+
+    // WorkManager dependencies
+    implementation(libs.work.runtime)
+    implementation(libs.work.runtime.ktx)
+
+    // OkHttp dependencies
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging.interceptor)
+
+    // Gson dependency
+    implementation(libs.gson)
+
+    
+    // Navigation dependencies
+    implementation(libs.navigation.fragment)
+    implementation(libs.navigation.ui)
+    implementation(libs.material)
+
     detektPlugins(libs.compose.detekt)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.work.testing)
+
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.espresso.core)
+    androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestImplementation(libs.androidx.fragment.testing)
+}
+
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+fun coverageClassTree(dir: String) = fileTree(dir) {
+    include("**/*.class")
+    exclude("**/R.class", "**/R\\$*.class", "**/BuildConfig.*")
+}
+
+val coverageClassDirs = files(
+    coverageClassTree("$buildDir/tmp/kotlin-classes"),
+    coverageClassTree("$buildDir/tmp/java-classes"),
+    coverageClassTree("$buildDir/intermediates/javac")
+)
+
+val coverageSourceDirs = files("src/main/java", "src/main/kotlin")
+val coverageExecutionData = fileTree("$buildDir/jacoco") {
+    include("*.exec")
+}
+
+val jacocoReport by tasks.registering(JacocoReport::class) {
+    dependsOn(tasks.withType<Test>())
+    group = "verification"
+    description = "Generates Jacoco coverage reports for all unit tests."
+    executionData.setFrom(coverageExecutionData)
+    sourceDirectories.setFrom(coverageSourceDirs)
+    classDirectories.setFrom(coverageClassDirs)
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
+}
+
+tasks.register<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
+    dependsOn(jacocoReport)
+    group = "verification"
+    description = "Enforces Jacoco coverage requirements."
+    executionData.setFrom(coverageExecutionData)
+    classDirectories.setFrom(coverageClassDirs)
+    violationRules {
+        rule {
+            limit {
+                minimum = "0.10".toBigDecimal()
+            }
+        }
+    }
+}
+
+tasks.register("validateCallSync") {
+    group = "verification"
+    description = "Runs lint, detekt, and coverage validations for the call logging feature."
+    dependsOn("lint", "detekt", "jacocoTestCoverageVerification")
 }

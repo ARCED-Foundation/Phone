@@ -1,0 +1,68 @@
+openapi: 3.0.3
+info:
+  title: ODK Central Entity API - Call Logs
+  version: 2023.11.30
+
+servers:
+  - url: https://{centralBaseUrl}/v1
+    variables:
+      centralBaseUrl:
+        default: your-central-server.com/api
+
+paths:
+  /projects/{projectId}/entity-types/call_logs/entities:
+    post:
+      summary: Create Call Log Entity
+      security:
+        - basicAuth: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entity:
+                  type: object
+                  properties:
+                    properties:
+                      type: object
+                      additionalProperties: true
+                      example:
+                        callLogId: 550e8400-e29b-41d4-a716-446655440000
+                        direction: outgoing
+                        callStartUtc: '2025-11-30T10:30:00Z'
+                        durationSeconds: 45.2
+                        outcome: answered
+              required: [entity]
+      responses:
+        '201':
+          description: Entity created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entity:
+                    type: object
+                    properties:
+                      uuid:
+                        type: string
+                      properties:
+                        type: object
+                        additionalProperties: true
+        '401':
+          description: Unauthorized
+        '429':
+          description: Rate limited
+
+securitySchemes:
+  basicAuth:
+    type: http
+    scheme: basic

@@ -1,0 +1,12 @@
+{
+  "label": "Phone 01715418546; Time: 2025-12-03T12:50:01Z",
+  "data": {
+    "call_log_id": "6c90a4c6-a1f0-4f90-8b7a-2e60fa99bc451",
+    "direction": "outgoing",
+    "call_start_utc": "2025-12-03T12:50:01Z",
+    "call_end_utc": "2025-12-03T12:52:48Z",
+    "duration_seconds": "167",
+    "outcome": "answered",
+    "phoneNumber": "01715418546"
+  }
+}

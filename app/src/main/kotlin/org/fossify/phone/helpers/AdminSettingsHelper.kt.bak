@@ -1,0 +1,99 @@
+package org.fossify.phone.helpers
+
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Credentials as OkHttpCredentials
+import org.fossify.phone.database.AppDatabase
+import org.fossify.phone.database.dao.CentralCredentialsDao
+import org.fossify.phone.extensions.config
+import org.fossify.phone.models.CentralCredentials
+import org.fossify.phone.utils.SecurityUtils
+
+class AdminSettingsHelper(private val context: Context) {
+    private val db by lazy { AppDatabase.getInstance(context) }
+    private val credsDao: CentralCredentialsDao by lazy { db.centralCredentialsDao() }
+
+    suspend fun saveCredentials(
+        centralUrl: String,
+        projectId: String,
+        username: String,
+        password: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val validationSuccess = validateCredentialsBeforeStorage(centralUrl, projectId, username, password)
+        if (!validationSuccess) {
+            return@withContext false
+        }
+
+        val hashedPassword = SecurityUtils.hashSecret(password)
+        val credentials = CentralCredentials(
+            centralUrl = centralUrl,
+            projectId = projectId,
+            username = username,
+            passwordHash = hashedPassword,
+            validated = true,
+            lastValidation = System.currentTimeMillis()
+        )
+
+        credsDao.clear()
+        credsDao.insert(credentials)
+        true
+    }
+
+    suspend fun validateCredentialsBeforeStorage(
+        centralUrl: String,
+        projectId: String,
+        username: String,
+        password: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            if (centralUrl.isBlank() || projectId.isBlank() || username.isBlank() || password.isBlank()) {
+                return@withContext false
+            }
+            val httpClient = OkHttpClient()
+            val request = Request.Builder()
+                .url("${centralUrl.trimEnd('/')}/api/v1/projects/${projectId}/forms")
+                .head()
+                .addHeader("Authorization", OkHttpCredentials.basic(username, password))
+                .build()
+            httpClient.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun getCredentials(): CentralCredentials? = withContext(Dispatchers.IO) { credsDao.getCredentials() }
+
+    suspend fun getValidatedCredentials(): CentralCredentials? = withContext(Dispatchers.IO) { credsDao.getValidatedCredentials() }
+
+    suspend fun updateValidation(validated: Boolean, lastValidation: Long?) = withContext(Dispatchers.IO) {
+        credsDao.updateValidation(validated, lastValidation)
+    }
+
+    suspend fun deleteAllCredentials() = withContext(Dispatchers.IO) { credsDao.clear() }
+
+    // Reserved keys management (SharedPreferences)
+    fun getReservedKeys(): Set<String> = context.config.reservedKeys
+
+    fun setReservedKeys(keys: Set<String>) {
+        context.config.reservedKeys = keys
+    }
+
+    fun addReservedKey(key: String) {
+        val current = getReservedKeys()
+        setReservedKeys(current + key)
+    }
+
+    fun removeReservedKey(key: String) {
+        val current = getReservedKeys()
+        setReservedKeys(current - key)
+    }
+
+    companion object {
+        val DEFAULT_RESERVED_KEYS = setOf("central_url", "central_project_id", "central_dataset", "system_*")
+    }
+}

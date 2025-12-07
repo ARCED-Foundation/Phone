@@ -500,6 +500,24 @@
 
     </LinearLayout>
 
+    <org.fossify.commons.views.MyTextView
+        android:id="@+id/manual_record_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="@dimen/normal_margin"
+        android:background="@drawable/pill_background"
+        android:contentDescription="@string/manual_record_button"
+        android:gravity="center"
+        android:paddingHorizontal="@dimen/normal_margin"
+        android:paddingVertical="@dimen/normal_margin"
+        android:visibility="gone"
+        android:text="@string/manual_record_button"
+        android:textColor="@color/md_red_400"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toTopOf="@id/call_end"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
     <ImageView
         android:id="@+id/call_end"
         android:layout_width="@dimen/call_control_button_size"

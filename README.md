@@ -22,7 +22,28 @@ The Fossify Phone App is designed for optimal resource usage, contributing to ex
 
 Download the Fossify Phone App now and step into a mobile world where privacy seamlessly blends with functionality. Your journey towards a safer, personalized mobile experience starts here.
 
-➡️ Explore more Fossify apps: https://www.fossify.org<br>
+## Call Logging Configuration
+
+1. **Admin setup** – Launch the admin flow, protect it with a PIN, and save your ODK Central credentials plus a configurable list of reserved keys so sensitive extras never leave the device.
+2. **Automatic call logging** – Every call attempt generates a call log record, deduplicated via `CallLogger`, stored in Room, and queued for battery-aware WorkManager uploads when constraints allow.
+3. **Manual fallback** – If automatic detection misses a call, the “End call & record” action surfaces a confirmation dialog, reuses the call logger pipeline, and still pushes the same pending sync entry.
+4. **Monitoring** – PerformanceMonitor keeps call detection under 100 ms and syncs under 5 min, while CrashTracker, CallDetectionAnalytics, and JaCoCo coverage reports guard reliability.
+5. **Validation quickstart** – Run the quickstart integration suite under `app/src/androidTest/kotlin/org/fossify/phone/quickstart/QuickstartIntegrationTest.kt` to ensure admin setup, manual fallback dialogs, reserved-key filtering, and failure handling behave before syncing to Central.
+
+➡
+
+## Central entity schema
+
+Call logs are uploaded to Central via POST /v1/projects/{projectId}/datasets/{datasetName}/entities/creators. Each request builds an entity whose data map comes from CallSyncManager.createEntityPayload. The following properties are always set:
+
+- central_base_url, project_id, dataset - the intent-provided Central configuration.
+- call_log_id, direction, call_start_utc, call_end_utc, duration_seconds, outcome, phone_number - the core call fields mirrored in the Room record.
+- Optional metadata when present: outcome_detail, instance_id, enumerator_id, survey_id, dditional_notes.
+- Every non-reserved intent extra (reserved keys are centralBaseUrl, centralProjectId, centralDatasetName, system_*, plus any custom reserved keys configured in Admin Settings).
+
+All values are submitted as strings because Central entities store string-valued properties. Bulk uploads reuse the same field names inside an entities array plus an optional source descriptor.
+
+Explore more Fossify apps: https://www.fossify.org<br>
 ➡️ Open-Source Code: https://www.github.com/FossifyOrg<br>
 ➡️ Join the community on Reddit: https://www.reddit.com/r/Fossify<br>
 ➡️ Connect on Telegram: https://t.me/Fossify

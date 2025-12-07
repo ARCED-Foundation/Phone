@@ -15,7 +15,14 @@
     <dimen name="caller_name_text_size">34sp</dimen>
     <dimen name="call_status_text_size">20sp</dimen>
 
+    <!-- Admin setup responsive dimensions -->
+    <dimen name="admin_setup_top_margin">32dp</dimen>
+    <dimen name="admin_setup_footer_margin">16dp</dimen>
+    <dimen name="admin_setup_card_corner_radius">20dp</dimen>
+    <dimen name="admin_setup_section_corner_radius">16dp</dimen>
+
     <!-- keep these 2 values in dp to avoid scaling -->
     <dimen name="dialpad_text_size">28dp</dimen>
     <dimen name="dialpad_letters_text_size">12dp</dimen>
+    <dimen name="body_text_size">14sp</dimen>
 </resources>

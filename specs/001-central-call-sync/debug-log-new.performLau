@@ -1,0 +1,17 @@
+{
+  "label": "01715418546 | outgoing | 2025-12-08T11:20:07.927Z",
+  "data": {
+    "call_log_id": "944d7a21-23e7-4473-b528-c3ca24fe7c37",
+    "direction": "outgoing",
+    "call_start_utc": "2025-12-08T11:20:07.927Z",
+    "call_end_utc": "2025-12-08T11:20:07.927Z",
+    "duration_seconds": "0.0",
+    "outcome": "answered",
+    "phoneNumber": "01715418546",
+    "outcome_detail": "Call disconnected unexpectedly",
+    "attempt": "1.0"
+  },
+  "central_base_url": "https://odk.arced.foundation",
+  "project_id": "3.0",
+  "dataset": "firm_list_entity"
+}

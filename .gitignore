@@ -1,10 +1,18 @@
+# Kotlin/Android Ignore Patterns
 *.iml
 *.aab
+*.apk
+*.dex
+*.aar
+.jar
+.class
 .gradle
 /local.properties
 /.idea/
-.DS_Store
+/.cxx/
+/externalNativeBuild/
 /build
+/gen/
 /captures
 keystore.jks
 keystore.properties
@@ -13,3 +21,9 @@ fastlane/report.xml
 .kotlin/
 *.log
 .env*
+*.profraw
+*.tmp
+*.swp
+.vscode/
+Thumbs.db
+.DS_Store

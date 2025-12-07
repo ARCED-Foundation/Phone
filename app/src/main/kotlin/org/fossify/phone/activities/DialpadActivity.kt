@@ -1,7 +1,10 @@
 package org.fossify.phone.activities
 
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
@@ -64,6 +67,9 @@ import org.fossify.phone.extensions.startContactDetailsIntent
 import org.fossify.phone.helpers.CallManager
 import org.fossify.phone.helpers.CallManagerListener
 import org.fossify.phone.helpers.DIALPAD_TONE_LENGTH_MS
+import org.fossify.phone.helpers.IntentExtrasHelper
+import org.fossify.phone.helpers.OdkIntentStateHolder
+import org.fossify.phone.helpers.PostCallMetadataHelper
 import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.helpers.ToneGeneratorHelper
 import org.fossify.phone.models.SpeedDial
@@ -74,8 +80,6 @@ import org.fossify.phone.models.CallDirection
 import org.fossify.phone.models.ConcatenatedValue
 import android.telecom.Call
 import org.fossify.phone.models.AudioRoute
-import android.content.BroadcastReceiver
-import android.content.IntentFilter
 import kotlinx.serialization.json.Json
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -88,7 +92,6 @@ class DialpadActivity : SimpleActivity() {
     private var odkSession: ODKSession? = null
     private var odkCallManagerListener: CallManagerListener? = null
     private var isOdkSession = false
-    private var firstOdkConnect = false
     private var odkReturnReceiver: BroadcastReceiver? = null
 
     private var allContacts = ArrayList<Contact>()
@@ -153,11 +156,17 @@ class DialpadActivity : SimpleActivity() {
                 // ODK tracking handled centrally by CallManager
             }
             override fun onCallActive(call: Call, number: String, isOutgoing: Boolean) {
-                if (isOdkSession && !firstOdkConnect) {
-                    firstOdkConnect = true
-                    android.util.Log.d("ODK_INTEGRATION", "First ODK call active - auto-return partial")
-                    returnToOdk(isPartial = true)
-                }
+                // Legacy method kept for compatibility; ODK auto-return handled via CallManager broadcast.
+            }
+            override fun onCallOutcomeDetected(
+                call: Call,
+                outcome: org.fossify.phone.models.CallOutcome,
+                outcomeDetail: String?,
+                durationSeconds: Double,
+                startTimeMs: Long,
+                endTimeMs: Long
+            ) {
+                // Outcome handling for ODK flow not required here
             }
         }
         odkCallManagerListener = listener
@@ -566,6 +575,9 @@ class DialpadActivity : SimpleActivity() {
             android.util.Log.d("ODK_INTEGRATION", "Intent 'value' extra: '$intentValue'")
         }
 
+        val filteredExtras = intent?.let { IntentExtrasHelper.getFilteredExtras(this, it) } ?: emptyMap()
+        val odkConfig = intent?.let { IntentExtrasHelper.extractOdkConfig(it) }
+
         intent?.validateOdkIntent()?.let { validationResult ->
             android.util.Log.d("ODK_INTEGRATION", "Validation result: $validationResult")
             android.util.Log.d("ODK_INTEGRATION", "Is valid: ${validationResult.isValid}")
@@ -573,7 +585,7 @@ class DialpadActivity : SimpleActivity() {
             android.util.Log.d("ODK_INTEGRATION", "Existing value: ${validationResult.existingValue}")
             android.util.Log.d("ODK_INTEGRATION", "Variant: ${validationResult.variant}")
 
-            if (validationResult.isValid) {
+            if (validationResult.isValid && odkConfig != null) {
                 // Set ODK session flag
                 isOdkSession = true
                 android.util.Log.d("ODK_INTEGRATION", "ODK session set to true")
@@ -596,6 +608,15 @@ class DialpadActivity : SimpleActivity() {
                 )
                 android.util.Log.d("ODK_INTEGRATION", "ODK session initialized with CallManager")
 
+                val extrasWithFlag = filteredExtras.toMutableMap().apply {
+                    put("odk_call", "true")
+                }
+                OdkIntentStateHolder.update(odkConfig, extrasWithFlag, this)
+                lifecycleScope.launch {
+                    PostCallMetadataHelper.getInstance(this@DialpadActivity)
+                        .backfillPendingWithConfig(odkConfig)
+                }
+
                 // Auto-populate dialpad with the phone number
                 validationResult.phoneNumber?.let { phoneNumber ->
                     binding.dialpadInput.setText(phoneNumber)
@@ -607,9 +628,11 @@ class DialpadActivity : SimpleActivity() {
                 showOdkModeUI()
                 android.util.Log.d("ODK_INTEGRATION", "ODK mode UI shown")
             } else {
+                OdkIntentStateHolder.clear()
                 android.util.Log.d("ODK_INTEGRATION", "ODK intent validation failed: ${validationResult.errors}")
             }
         } ?: run {
+            OdkIntentStateHolder.clear()
             android.util.Log.d("ODK_INTEGRATION", "No intent or validation result returned null")
         }
     }
@@ -624,21 +647,8 @@ class DialpadActivity : SimpleActivity() {
         binding.odkModeIndicator?.visibility = View.VISIBLE
         binding.finishOdkButton?.visibility = View.VISIBLE
         binding.finishOdkButton?.setOnClickListener {
-            showFinishConfirmation()
+            returnToOdk()
         }
-    }
-
-    private fun showFinishConfirmation() {
-        val session = CallManager.getOdkSession()
-        val callCount = session?.callRecords?.size ?: 0
-        val preview = CallManager.getConcatenatedOdkValue().take(100) + if (CallManager.getConcatenatedOdkValue().length > 100) "..." else ""
-
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Return to ODK Collect?")
-            .setMessage("$callCount call(s) logged.\\nPreview: $preview")
-            .setPositiveButton("Return Data") { _, _ -> returnToOdk() }
-            .setNegativeButton("Continue Calls", null)
-            .show()
     }
 
     private fun returnToOdk() {
@@ -675,7 +685,7 @@ class DialpadActivity : SimpleActivity() {
 
     override fun onBackPressed() {
         if (isOdkSession) {
-            showFinishConfirmation()
+            returnToOdk()
         } else {
             super.onBackPressed()
         }

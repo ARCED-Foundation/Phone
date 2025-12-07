@@ -28,7 +28,7 @@
         android:layout_height="wrap_content"
         android:text="📋 ODK Data Collection Mode - Calls Being Logged"
         android:background="#4CAF50"
-        android:textColor="#FFFFFF"
+        android:textColor="?attr/colorOnPrimary"
         android:padding="12dp"
         android:gravity="center"
         android:textStyle="bold"
@@ -148,14 +148,14 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent" />
 
-        <!-- Finish &amp; Return to ODK Button -->
+        <!-- Return to ODK Button -->
         <Button
             android:id="@+id/finish_odk_button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Finish &amp; Return to ODK Collect"
+            android:text="@string/return_to_odk"
             android:background="#4CAF50"
-            android:textColor="#FFFFFF"
+            android:textColor="?attr/colorOnPrimary"
             android:visibility="gone"
             android:layout_margin="@dimen/activity_margin"
             app:layout_constraintBottom_toBottomOf="parent"
