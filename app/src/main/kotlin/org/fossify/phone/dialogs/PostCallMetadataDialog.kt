@@ -12,8 +12,7 @@ import org.fossify.phone.helpers.PostCallMetadataHelper
 class PostCallMetadataDialog(
     private val activity: SimpleActivity,
     private val state: PostCallMetadataHelper.FormState,
-    private val onSave: (PostCallMetadataHelper.FormState) -> Unit,
-    private val onSkip: () -> Unit
+    private val onSave: (PostCallMetadataHelper.FormState) -> Unit
 ) {
     internal var alertDialog: AlertDialog? = null
 
@@ -27,29 +26,47 @@ class PostCallMetadataDialog(
 
         val builder = activity.getAlertDialogBuilder()
             .setPositiveButton(R.string.save, null)
-            .setNegativeButton(R.string.survey_skip, null)
 
         activity.setupDialogStuff(binding.root, builder, R.string.post_call_form_title) { dialog ->
             alertDialog = dialog
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val uniqueId = binding.postCallUniqueId.value.trim()
+                val enumeratorId = binding.postCallEnumerator.value.trim()
+                val note = binding.postCallNote.value.trim()
+
+                var hasError = false
                 if (uniqueId.isBlank()) {
                     binding.postCallUniqueIdHint.error = activity.getString(R.string.post_call_unique_id_required)
+                    hasError = true
+                } else {
+                    binding.postCallUniqueIdHint.error = null
+                }
+
+                if (enumeratorId.isBlank()) {
+                    binding.postCallEnumeratorHint.error = activity.getString(R.string.post_call_enumerator_required)
+                    hasError = true
+                } else {
+                    binding.postCallEnumeratorHint.error = null
+                }
+
+                if (note.isBlank()) {
+                    binding.postCallNoteHint.error = activity.getString(R.string.post_call_note_required)
+                    hasError = true
+                } else {
+                    binding.postCallNoteHint.error = null
+                }
+
+                if (hasError) {
                     return@setOnClickListener
                 }
 
                 val updated = state.copy(
                     surveyCall = binding.postCallSurveySwitch.isChecked,
                     uniqueId = uniqueId,
-                    enumeratorId = binding.postCallEnumerator.value.trim().ifEmpty { null },
-                    note = binding.postCallNote.value.trim().ifEmpty { null }
+                    enumeratorId = enumeratorId,
+                    note = note
                 )
                 onSave(updated)
-                dialog.dismiss()
-            }
-
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
-                onSkip()
                 dialog.dismiss()
             }
         }

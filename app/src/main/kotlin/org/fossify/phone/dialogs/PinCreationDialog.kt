@@ -6,6 +6,7 @@ import android.text.InputType
 import android.view.WindowManager
 import android.widget.EditText
 import androidx.appcompat.app.AlertDialog
+import android.widget.Toast
 import org.fossify.phone.R
 import org.fossify.phone.extensions.getAlertDialogBuilder
 import org.fossify.phone.extensions.config
@@ -85,19 +86,28 @@ class PinCreationDialog(
                     val confirmPin = confirmPinEditText.text.toString()
                     android.util.Log.d("PinCreationDialog", "Pin validation - initial length: ${initialPin.length}, confirm length: ${confirmPin.length}")
 
-                    if (initialPin == confirmPin && initialPin.length >= 4) {
+                    if (initialPin.length < 4) {
+                        Toast.makeText(activity, R.string.pin_too_short_message, Toast.LENGTH_SHORT).show()
+                        dialog.dismiss()
+                        showFirstPinDialog()
+                        return@setPositiveButton
+                    }
+
+                    if (initialPin != confirmPin) {
+                        android.util.Log.w("PinCreationDialog", "Pin mismatch")
+                        Toast.makeText(activity, R.string.pin_mismatch, Toast.LENGTH_SHORT).show()
+                        dialog.dismiss()
+                        showFirstPinDialog()
+                        return@setPositiveButton
+                    }
+
+                    if (initialPin == confirmPin) {
                         val pinHash = SecurityUtils.hashSecret(initialPin)
                         android.util.Log.d("PinCreationDialog", "Pin created successfully, hash length: ${pinHash.length}")
                         activity.config.adminPinHash = pinHash
                         activity.config.adminPinFailedAttempts = 0
                         activity.config.adminPinLockoutUntil = 0L
                         callback(true, initialPin)
-                    } else if (initialPin != confirmPin) {
-                        android.util.Log.w("PinCreationDialog", "Pin mismatch")
-                        callback(false, null)
-                    } else {
-                        android.util.Log.w("PinCreationDialog", "Pin too short: ${initialPin.length}")
-                        callback(false, null)
                     }
                     dialog.dismiss()
                 } catch (e: Exception) {

@@ -50,6 +50,13 @@ class CredentialsSetupActivity : SimpleActivity() {
         binding.btnTestConnection.setOnClickListener {
             testConnection()
         }
+
+        binding.switchRememberBaseUrl.setOnCheckedChangeListener { _, isChecked ->
+            if (!isChecked) {
+                // Clear any persisted override so ODK intent-provided URLs are used.
+                config.centralBaseUrlOverride = null
+            }
+        }
     }
 
     private fun loadCurrentCredentials() {
@@ -107,6 +114,8 @@ class CredentialsSetupActivity : SimpleActivity() {
             }
             if (success && binding.switchRememberBaseUrl.isChecked && baseUrlInput.isNotBlank()) {
                 config.centralBaseUrlOverride = baseUrlInput
+            } else if (!binding.switchRememberBaseUrl.isChecked) {
+                config.centralBaseUrlOverride = null
             }
         }
     }

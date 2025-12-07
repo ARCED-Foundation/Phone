@@ -1,5 +1,7 @@
 Remaining tasks:
-1. Admin setup pin creation must match 2 entries while creation. 
+1. Admin setup pin creation must match 2 entries while creation. If does not match start creating pin again.
+2. The end call form should have only 1 button - save. The form fields must have values.
+3. The ODK Base URL in the app admin page should be auto-removed if the "Remember this base URL for future sessions" is not toggled on. If toggled off the ODK intent will be used, otherwise, this base URL will be used. So, this button should be called: "Always use this base URL".
 
 Context:
 The Phone app already implements offline-first call logging with local Room storage and background syncing to ODK Central Entity API. Many reliability mechanisms are in place (unique call_log_id, WorkManager retries, basic auth, dataset mapping, admin settings). We now want to verify system readiness for no-data-loss guarantee under real field conditions and identify any missing safeguards or edge cases.

@@ -111,7 +111,7 @@
     <string name="credentials_base_url_description">Use this URL for the credential test. Saving it for future sessions is optional.</string>
     <string name="central_url_override_helper">The test uses the provided URL even if you don’t remember it.</string>
     <string name="credentials_section_helper">These credentials authenticate the app for outgoing ODK Central syncs.</string>
-    <string name="remember_base_url">Remember this base URL for future sessions</string>
+    <string name="remember_base_url">Always use this base URL</string>
     <string name="central_url_required">Enter a Central base URL before testing credentials.</string>
     <string name="test_required_before_save">Run Test connection after any change before saving.</string>
     <string name="base_url_override_saved">Central base URL override saved</string>
@@ -160,6 +160,8 @@
     <string name="pin_locked_out">PIN locked. Try again in %1$d seconds.</string>
     <string name="pin_too_many_attempts">Too many attempts. Locked for %1$d minutes.</string>
     <string name="pin_required_after_credentials">Credentials are configured; protect them by creating an admin PIN.</string>
+    <string name="pin_mismatch">PINs do not match. Please try again.</string>
+    <string name="pin_too_short_message">PIN must be at least 4 digits.</string>
     <string name="create_pin">Create PIN</string>
     <string name="confirm_pin">Confirm PIN</string>
     <string name="call_sync_in_progress">Preparing background sync…</string>
@@ -182,6 +184,8 @@
     <string name="post_call_enumerator_label">Enumerator ID</string>
     <string name="post_call_note_label">Note</string>
     <string name="post_call_unique_id_required">Unique ID is required</string>
+    <string name="post_call_enumerator_required">Enumerator ID is required</string>
+    <string name="post_call_note_required">Note is required</string>
     <string name="sync_logs">ODK sync logs</string>
     <string name="sync_logs_title">ODK sync log</string>
     <string name="sync_logs_header_time">Time</string>

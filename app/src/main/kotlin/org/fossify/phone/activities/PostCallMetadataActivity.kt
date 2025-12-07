@@ -61,8 +61,7 @@ class PostCallMetadataActivity : SimpleActivity() {
                         }
                         finish()
                     }
-                },
-                onSkip = { finish() }
+                }
             )
         }
     }
