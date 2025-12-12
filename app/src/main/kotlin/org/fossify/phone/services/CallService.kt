@@ -19,13 +19,15 @@ import org.fossify.phone.models.Events
 import org.fossify.phone.models.CallOutcome
 import org.fossify.phone.utils.Logger
 import org.fossify.phone.utils.TimestampUtils
-import org.json.JSONObject
 import org.greenrobot.eventbus.EventBus
 import org.fossify.phone.helpers.CallManagerListener
 import org.fossify.phone.models.AudioRoute
 import org.fossify.phone.helpers.CallLogger
 import org.fossify.phone.activities.SurveyDataCollectionActivity
 import org.fossify.phone.activities.PostCallMetadataActivity
+import java.util.UUID
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -33,6 +35,11 @@ import kotlinx.coroutines.withContext
 
 class CallService : InCallService(), CallManagerListener {
     private val callNotificationManager by lazy { CallNotificationManager(this) }
+    companion object {
+        // Prevent duplicate metadata prompts for the same call log
+        private val promptedCallLogs: MutableSet<UUID> =
+            Collections.newSetFromMap(ConcurrentHashMap())
+    }
 
     private val callListener = object : Call.Callback() {
         override fun onStateChanged(call: Call, state: Int) {
@@ -234,17 +241,25 @@ class CallService : InCallService(), CallManagerListener {
             try {
                 val callLogger = CallLogger(this@CallService)
                 val intentState = OdkIntentStateHolder.current()
-                val extrasJson = runCatching { JSONObject(call.details.extras?.toString() ?: "") }.getOrNull()
-                val extrasFlag = extrasJson
-                    ?.optString("odk_call", "false")
-                    ?.equals("true", ignoreCase = true) == true
+                val callExtras = call.details.extras
+
+                // Treat the call as ODK-driven if we still have a live ODK session/config
+                // or if any of the known flags are present on the call extras.
+                val hasOdkSession = CallManager.isOdkSessionActive()
+                val hasOdkConfig = intentState.config != null
                 val stateFlag = intentState.extras["odk_call"]?.toString()?.toBooleanStrictOrNull() == true
-                val isOdkCall = CallManager.isOdkSessionActive() ||
+                val stateInstanceFlag = intentState.extras["odkCollectInstanceId"] != null
+                val extrasFlag = callExtras?.getString("odk_call")?.toBooleanStrictOrNull() == true ||
+                    callExtras?.getBoolean("odk_call", false) == true
+                val extrasInstanceFlag = callExtras?.getString("odkCollectInstanceId") != null
+
+                val isOdkCall = hasOdkSession ||
+                    hasOdkConfig ||
                     stateFlag ||
+                    stateInstanceFlag ||
                     extrasFlag ||
-                    call.details.extras?.getString("odk_call")?.toBooleanStrictOrNull() == true ||
-                    call.details.extras?.getBoolean("odk_call", false) == true ||
-                    call.details.extras?.getString("odkCollectInstanceId") != null
+                    extrasInstanceFlag
+
                 if (!isOdkCall) {
                     OdkIntentStateHolder.clear()
                 }
@@ -267,7 +282,7 @@ class CallService : InCallService(), CallManagerListener {
                     CallManager.resetOdkSession()
                     OdkIntentStateHolder.clear()
                 }
-                if (!isOdkCall) {
+                if (!isOdkCall && promptedCallLogs.add(createdLog.callLogId)) {
                     withContext(Dispatchers.Main) {
                         PostCallMetadataActivity.launch(
                             this@CallService,

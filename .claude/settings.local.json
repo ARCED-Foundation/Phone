@@ -46,7 +46,8 @@
       "Bash(then find specs/001-central-call-sync/contracts -type f)",
       "Bash(then echo \"research.md exists\")",
       "Bash(then echo \"quickstart.md exists\")",
-      "Bash(adb install:*)"
+      "Bash(adb install:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

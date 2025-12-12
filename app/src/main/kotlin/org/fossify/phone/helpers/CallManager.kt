@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Handler
+import android.os.Looper
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.DisconnectCause
@@ -38,6 +39,7 @@ class CallManager {
         private var call: Call? = null
         private val calls = mutableListOf<Call>()
         internal val listeners = CopyOnWriteArraySet<CallManagerListener>()
+        private val mainHandler = Handler(Looper.getMainLooper())
 
         // Track per-call state history for proper lifecycle management
         private val callStateHistory = mutableMapOf<Call, CallStateHistory>()
@@ -57,6 +59,12 @@ class CallManager {
             var isInStateUpdate: Boolean = false,  // Prevent concurrent notifications
             var startTimeMillis: Long? = null,
             var connectTimeMillis: Long? = null
+        )
+
+        data class CallTiming(
+            val durationSeconds: Double,
+            val startTimeMs: Long,
+            val connectTimeMs: Long?
         )
 
         fun onCallAdded(call: Call) {
@@ -188,6 +196,20 @@ class CallManager {
             calls.removeAll { it.getStateCompat() == Call.STATE_DISCONNECTED }
         }
 
+        private fun notifyStateChangedListeners() {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                for (listener in listeners) {
+                    listener.onStateChanged()
+                }
+            } else {
+                mainHandler.post {
+                    for (listener in listeners) {
+                        listener.onStateChanged()
+                    }
+                }
+            }
+        }
+
         // Handle individual call state changes with proper lifecycle tracking
         private fun handleCallStateChange(call: Call, newState: Int) {
             val detectionStart = PerformanceMonitor.startCallDetection()
@@ -200,57 +222,70 @@ class CallManager {
                 }
 
                 val oldState = stateHistory.previousState
+                val callDetails = call.details
+                val detailCreationTime = callDetails.creationTimeMillis.takeIf { it > 0 }
+                val detailConnectTime = callDetails.connectTimeMillis.takeIf { it > 0 }
 
-            // Only process meaningful transitions
-            if (oldState != newState) {
-                android.util.Log.d("CallManager", "Call state transition: ${callStateToString(oldState)} -> ${callStateToString(newState)}")
-
-                // Handle call start transitions (IDLE -> DIALING/CONNECTING/ACTIVE)
-                if (isStartTransition(oldState, newState)) {
-                    if (stateHistory.startTimeMillis == null) {
-                        stateHistory.startTimeMillis = System.currentTimeMillis()
-                    }
-                    if (!stateHistory.hasNotifiedStart) {
-                        notifyCallStartedEvents(call)
-                        stateHistory.hasNotifiedStart = true
-                    }
+                if (detailCreationTime != null) {
+                    stateHistory.startTimeMillis = stateHistory.startTimeMillis?.let { minOf(it, detailCreationTime) } ?: detailCreationTime
+                }
+                if (detailConnectTime != null) {
+                    stateHistory.connectTimeMillis = stateHistory.connectTimeMillis?.let { minOf(it, detailConnectTime) } ?: detailConnectTime
                 }
 
-                // Handle call active transition (DIALING/CONNECTING -> ACTIVE)
-                if (isCallActiveTransition(oldState, newState)) {
-                    if (stateHistory.connectTimeMillis == null) {
-                        stateHistory.connectTimeMillis = System.currentTimeMillis()
-                    }
-                    notifyCallActiveEvents(call)
-                }
+                // Only process meaningful transitions
+                val stateChanged = oldState != newState
+                if (stateChanged) {
+                    android.util.Log.d("CallManager", "Call state transition: ${callStateToString(oldState)} -> ${callStateToString(newState)}")
 
-                // Handle call end transitions and detect call outcome
-                if (isEndTransition(oldState, newState)) {
-                    if (!stateHistory.hasNotifiedEnd) {
-                        val outcome = detectCallOutcome(call, oldState, newState)
-                        val endTimeMs = System.currentTimeMillis()
-                        val duration = calculateCallDuration(call, stateHistory, endTimeMs)
-                        val startTime = stateHistory.startTimeMillis
-                            ?: (endTimeMs - (duration * 1000).toLong())
-                        val outcomeDetail = buildOutcomeDetail(
-                            call = call,
-                            outcome = outcome,
-                            durationSeconds = duration,
-                            startTimeMs = startTime,
-                            endTimeMs = endTimeMs,
-                            oldState = oldState,
-                            newState = newState,
-                            connectTimeMs = stateHistory.connectTimeMillis
-                        )
-                        notifyCallEndedEvents()
-                        notifyCallOutcomeEvents(call, outcome, outcomeDetail, duration, startTime, endTimeMs)
-                        stateHistory.hasNotifiedEnd = true
+                    // Handle call start transitions (IDLE -> DIALING/CONNECTING/ACTIVE)
+                    if (isStartTransition(oldState, newState)) {
+                        if (stateHistory.startTimeMillis == null) {
+                            stateHistory.startTimeMillis = detailCreationTime ?: System.currentTimeMillis()
+                        }
+                        if (!stateHistory.hasNotifiedStart) {
+                            notifyCallStartedEvents(call)
+                            stateHistory.hasNotifiedStart = true
+                        }
+                    }
+
+                    // Handle call active transition (DIALING/CONNECTING -> ACTIVE)
+                    if (isCallActiveTransition(oldState, newState)) {
+                        val resolvedConnectTime = detailConnectTime ?: System.currentTimeMillis()
+                        if (stateHistory.connectTimeMillis == null || (detailConnectTime != null && detailConnectTime < stateHistory.connectTimeMillis!!)) {
+                            stateHistory.connectTimeMillis = resolvedConnectTime
+                        }
+                        notifyCallActiveEvents(call)
+                    }
+
+                    // Handle call end transitions and detect call outcome
+                    if (isEndTransition(oldState, newState)) {
+                        if (!stateHistory.hasNotifiedEnd) {
+                            val outcome = detectCallOutcome(call, oldState, newState)
+                            val endTimeMs = System.currentTimeMillis()
+                            val timing = calculateCallTiming(call, stateHistory, endTimeMs)
+                            val outcomeDetail = buildOutcomeDetail(
+                                call = call,
+                                outcome = outcome,
+                                durationSeconds = timing.durationSeconds,
+                                startTimeMs = timing.startTimeMs,
+                                endTimeMs = endTimeMs,
+                                oldState = oldState,
+                                newState = newState,
+                                connectTimeMs = timing.connectTimeMs
+                            )
+                            notifyCallEndedEvents()
+                            notifyCallOutcomeEvents(call, outcome, outcomeDetail, timing.durationSeconds, timing.startTimeMs, endTimeMs)
+                            stateHistory.hasNotifiedEnd = true
+                        }
                     }
                 }
-            }
 
                 // Always update the previous state
                 stateHistory.previousState = newState
+                if (stateChanged) {
+                    notifyStateChangedListeners()
+                }
             } finally {
                 PerformanceMonitor.endCallDetection(detectionStart)
             }
@@ -332,8 +367,9 @@ class CallManager {
                 try {
                     val callId = findCallIdByNumber(number)
                     if (callId != null) {
-                        updateOdkCallConnection(callId, System.currentTimeMillis())
-                        android.util.Log.d("CallManager", "ODK call connected for $number at ${System.currentTimeMillis()}")
+                        val connectTimestamp = call.details.connectTimeMillis.takeIf { it > 0 } ?: System.currentTimeMillis()
+                        updateOdkCallConnection(callId, connectTimestamp)
+                        android.util.Log.d("CallManager", "ODK call connected for $number at $connectTimestamp")
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("CallManager", "Failed to update ODK call connection: ${e.message}")
@@ -527,9 +563,10 @@ class CallManager {
         fun getActiveOdkCalls(): Map<String, OdkCallTrackingInfo> = activeOdkCallTracking
 
         fun addActiveOdkCall(callId: String, call: Call, phoneNumber: String, direction: CallDirection): OdkCallTrackingInfo {
+            val startTimestamp = call.details.creationTimeMillis.takeIf { it > 0 } ?: System.currentTimeMillis()
             val trackingInfo = OdkCallTrackingInfo(
                 call = call,
-                startTime = System.currentTimeMillis(),
+                startTime = startTimestamp,
                 connectTime = null,
                 number = phoneNumber,
                 direction = direction,
@@ -699,21 +736,32 @@ class CallManager {
             }
         }
 
-        // Calculate call duration in seconds
-        private fun calculateCallDuration(
+        // Calculate call timing using the most precise timestamps available
+        private fun calculateCallTiming(
             call: Call,
             stateHistory: CallStateHistory,
             endTimeMs: Long
-        ): Double {
-            val tracked = CallManager.activeOdkCallTracking.values.find { it.call == call }
-            val connectTime = stateHistory.connectTimeMillis ?: tracked?.connectTime
-            val startTime = stateHistory.startTimeMillis ?: tracked?.startTime
+        ): CallTiming {
+            val tracked = activeOdkCallTracking.values.find { it.call == call }
+            val details = call.details
 
-            val baselineStart = connectTime ?: startTime
-            if (baselineStart == null) return 0.0
+            val detailConnectTime = details.connectTimeMillis.takeIf { it > 0 }
+            val detailCreationTime = details.creationTimeMillis.takeIf { it > 0 }
 
-            val durationMs = (endTimeMs - baselineStart).coerceAtLeast(0)
-            return durationMs / 1000.0
+            val connectTime = detailConnectTime
+                ?: stateHistory.connectTimeMillis
+                ?: tracked?.connectTime
+
+            val startTime = connectTime
+                ?: stateHistory.startTimeMillis
+                ?: tracked?.startTime
+                ?: detailCreationTime
+                ?: endTimeMs
+
+            val durationMs = (endTimeMs - startTime).coerceAtLeast(0)
+            val durationSeconds = durationMs / 1000.0
+
+            return CallTiming(durationSeconds, startTime, connectTime)
         }
 
         // Get failure reason for failed calls
