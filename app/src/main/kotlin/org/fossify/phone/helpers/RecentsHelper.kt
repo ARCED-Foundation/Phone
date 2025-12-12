@@ -25,6 +25,18 @@ class RecentsHelper(private val context: Context) {
     private val contentUri = Calls.CONTENT_URI
     private var queryLimit = QUERY_LIMIT
 
+    // Helper function to limit cache size to prevent memory issues
+    private fun <K, V> MutableMap<K, V>.limitTo(maxSize: Int) {
+        if (this.size > maxSize) {
+            // Remove oldest entries until we're under the limit
+            val itemsToRemove = this.size - maxSize
+            val keys = this.keys.toList()
+            for (i in 0 until itemsToRemove) {
+                keys[i]?.let { remove(it) }
+            }
+        }
+    }
+
     fun getRecentCalls(
         previousRecents: List<RecentCall> = ArrayList(),
         queryLimit: Int = QUERY_LIMIT,

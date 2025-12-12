@@ -226,11 +226,13 @@ class ContactsAdapter(
     @SuppressLint("NotifyDataSetChanged")
     fun updateItems(newItems: List<Contact>, highlightText: String = "") {
         if (newItems.hashCode() != contacts.hashCode()) {
+            // Only update if items actually changed
             contacts = ArrayList(newItems)
             textToHighlight = highlightText
             notifyDataSetChanged()
             finishActMode()
         } else if (textToHighlight != highlightText) {
+            // Only update highlight text if it changed
             textToHighlight = highlightText
             notifyDataSetChanged()
         }

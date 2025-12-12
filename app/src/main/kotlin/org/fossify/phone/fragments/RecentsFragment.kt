@@ -26,6 +26,7 @@ import org.fossify.phone.extensions.runAfterAnimations
 import org.fossify.phone.extensions.startAddContactIntent
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
 import org.fossify.phone.extensions.startContactDetailsIntent
+import org.fossify.phone.helpers.ContactCacheManager
 import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.interfaces.RefreshItemsListener
 import org.fossify.phone.models.CallLogItem
@@ -41,6 +42,11 @@ class RecentsFragment(
 
     private var searchQuery: String? = null
     private var recentsHelper = RecentsHelper(context)
+
+    // Search caching optimization
+    private val searchCache = mutableMapOf<String, List<CallLogItem>>()
+    private var lastSearchTime = 0L
+    private val searchDebounceDelay = 300L // 300ms debounce
 
     override fun onFinishInflate() {
         super.onFinishInflate()
@@ -77,6 +83,8 @@ class RecentsFragment(
     override fun refreshItems(invalidate: Boolean, callback: (() -> Unit)?) {
         if (invalidate) {
             allRecentCalls = emptyList()
+            // Clear search cache when data is invalidated
+            searchCache.clear()
         }
 
         refreshCallLog(loadAll = false) {
@@ -99,8 +107,28 @@ class RecentsFragment(
 
     @Suppress("UNCHECKED_CAST")
     private fun updateSearchResult() {
+        val currentSearchQuery = searchQuery?.trim()?.replace("\\s+".toRegex(), " ") ?: ""
+        val fixedText = if (currentSearchQuery.isNotEmpty()) currentSearchQuery else ""
+        val currentTime = System.currentTimeMillis()
+
+        // Debounce search - don't execute if called too quickly after previous search
+        if (currentTime - lastSearchTime < searchDebounceDelay && searchCache.containsKey(fixedText)) {
+            lastSearchTime = currentTime
+            return
+        }
+
+        lastSearchTime = currentTime
+
+        // Check cache first
+        searchCache[fixedText]?.let { cachedResult ->
+            activity?.runOnUiThread {
+                showOrHidePlaceholder(cachedResult.isEmpty())
+                recentsAdapter?.updateItems(cachedResult, fixedText)
+            }
+            return
+        }
+
         ensureBackgroundThread {
-            val fixedText = searchQuery!!.trim().replace("\\s+".toRegex(), " ")
             val recentCalls = allRecentCalls
                 .filterIsInstance<RecentCall>()
                 .filter {
@@ -112,10 +140,19 @@ class RecentsFragment(
                         .thenByDescending { it.startTS }
                 )
 
-            prepareCallLog(recentCalls) {
+            prepareCallLog(recentCalls) { callLogItems ->
+                // Cache the result
+                searchCache[fixedText] = callLogItems
+
+                // Limit cache size to prevent memory issues
+                if (searchCache.size > 10) {
+                    // Remove oldest entry (FIFO)
+                    searchCache.keys.firstOrNull()?.let { searchCache.remove(it) }
+                }
+
                 activity?.runOnUiThread {
-                    showOrHidePlaceholder(recentCalls.isEmpty())
-                    recentsAdapter?.updateItems(it, fixedText)
+                    showOrHidePlaceholder(callLogItems.isEmpty())
+                    recentsAdapter?.updateItems(callLogItems, fixedText)
                 }
             }
         }

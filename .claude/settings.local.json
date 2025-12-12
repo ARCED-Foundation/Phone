@@ -47,7 +47,10 @@
       "Bash(then echo \"research.md exists\")",
       "Bash(then echo \"quickstart.md exists\")",
       "Bash(adb install:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(keytool:*)",
+      "Bash(unzip:*)",
+      "Bash(jarsigner:*)"
     ],
     "deny": [],
     "ask": []

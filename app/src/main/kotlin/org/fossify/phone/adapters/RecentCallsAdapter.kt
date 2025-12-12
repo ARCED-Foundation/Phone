@@ -197,10 +197,17 @@ class RecentCallsAdapter(
     }
 
     override fun submitList(list: List<CallLogItem>?) {
-        val layoutManager = recyclerView.layoutManager!!
-        val recyclerViewState = layoutManager.onSaveInstanceState()
+        submitList(list, null)
+    }
+
+    override fun submitList(list: List<CallLogItem>?, commitCallback: Runnable?) {
+        val layoutManager = recyclerView.layoutManager
+        val recyclerViewState = layoutManager?.onSaveInstanceState()
         super.submitList(list) {
-            layoutManager.onRestoreInstanceState(recyclerViewState)
+            recyclerViewState?.let { state ->
+                layoutManager?.onRestoreInstanceState(state)
+            }
+            commitCallback?.run()
         }
     }
 
@@ -337,18 +344,20 @@ class RecentCallsAdapter(
         }
     }
 
-    @SuppressLint("NotifyDataSetChanged")
     fun updateItems(newItems: List<CallLogItem>, highlightText: String = "") {
         if (textToHighlight != highlightText) {
+            // When highlight text changes, we need to update the list but preserve selection state
             textToHighlight = highlightText
             submitList(newItems) {
-                recyclerView.post {
-                    notifyDataSetChanged()
-                }
+                // Don't use notifyDataSetChanged() - let DiffUtil do its job
+                // The highlight change is handled in the ViewHolder bind method
             }
             finishActMode()
         } else {
-            submitList(newItems)
+            // Only update list if items actually changed
+            if (currentList != newItems) {
+                submitList(newItems)
+            }
         }
     }
 

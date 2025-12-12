@@ -26,6 +26,7 @@ import org.fossify.phone.activities.SimpleActivity
 import org.fossify.phone.adapters.ContactsAdapter
 import org.fossify.phone.databinding.FragmentContactsBinding
 import org.fossify.phone.databinding.FragmentLettersLayoutBinding
+import org.fossify.phone.helpers.ContactCacheManager
 import org.fossify.phone.extensions.launchCreateNewContactIntent
 import org.fossify.phone.extensions.setupWithContacts
 import org.fossify.phone.extensions.startCallWithConfirmationCheck
@@ -36,6 +37,11 @@ class ContactsFragment(context: Context, attributeSet: AttributeSet) : MyViewPag
     RefreshItemsListener {
     private lateinit var binding: FragmentLettersLayoutBinding
     private var allContacts = ArrayList<Contact>()
+
+    // Search caching optimization
+    private val searchCache = mutableMapOf<String, ArrayList<Contact>>()
+    private var lastSearchTime = 0L
+    private val searchDebounceDelay = 300L // 300ms debounce
 
     override fun onFinishInflate() {
         super.onFinishInflate()
@@ -86,6 +92,9 @@ class ContactsFragment(context: Context, attributeSet: AttributeSet) : MyViewPag
     }
 
     override fun refreshItems(invalidate: Boolean, callback: (() -> Unit)?) {
+        // Clear search cache when contacts are refreshed
+        searchCache.clear()
+
         val privateCursor = context?.getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
         ContactsHelper(context).getContacts(showOnlyContactsWithNumbers = true) { contacts ->
             allContacts = contacts
@@ -158,6 +167,28 @@ class ContactsFragment(context: Context, attributeSet: AttributeSet) : MyViewPag
 
     override fun onSearchQueryChanged(text: String) {
         val fixedText = text.trim().replace("\\s+".toRegex(), " ")
+        val currentTime = System.currentTimeMillis()
+
+        // Debounce search - don't execute if called too quickly after previous search
+        if (currentTime - lastSearchTime < searchDebounceDelay && searchCache.containsKey(fixedText)) {
+            lastSearchTime = currentTime
+            val cachedResult = searchCache[fixedText]!!
+            binding.fragmentPlaceholder.beVisibleIf(cachedResult.isEmpty())
+            (binding.fragmentList.adapter as? ContactsAdapter)?.updateItems(cachedResult, fixedText)
+            setupLetterFastScroller(cachedResult)
+            return
+        }
+
+        lastSearchTime = currentTime
+
+        // Check cache first
+        searchCache[fixedText]?.let { cachedResult ->
+            binding.fragmentPlaceholder.beVisibleIf(cachedResult.isEmpty())
+            (binding.fragmentList.adapter as? ContactsAdapter)?.updateItems(cachedResult, fixedText)
+            setupLetterFastScroller(cachedResult)
+            return
+        }
+
         val shouldNormalize = fixedText.normalizeString() == fixedText
         val filtered = allContacts.filter { contact ->
             getProperText(contact.getNameToDisplay(), shouldNormalize).contains(fixedText, true) ||
@@ -175,6 +206,15 @@ class ContactsFragment(context: Context, attributeSet: AttributeSet) : MyViewPag
         filtered.sortBy {
             val nameToDisplay = it.getNameToDisplay()
             !getProperText(nameToDisplay, shouldNormalize).startsWith(fixedText, true) && !nameToDisplay.contains(fixedText, true)
+        }
+
+        // Cache the result
+        searchCache[fixedText] = filtered
+
+        // Limit cache size to prevent memory issues
+        if (searchCache.size > 10) {
+            // Remove oldest entry (FIFO)
+            searchCache.keys.firstOrNull()?.let { searchCache.remove(it) }
         }
 
         binding.fragmentPlaceholder.beVisibleIf(filtered.isEmpty())

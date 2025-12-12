@@ -47,6 +47,7 @@ import org.fossify.phone.fragments.FavoritesFragment
 import org.fossify.phone.fragments.MyViewPagerFragment
 import org.fossify.phone.fragments.RecentsFragment
 import org.fossify.phone.services.CallSyncService
+import org.fossify.phone.helpers.ContactCacheManager
 import org.fossify.phone.helpers.OPEN_DIAL_PAD_AT_LAUNCH
 import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.helpers.SyncStatusTracker
@@ -115,6 +116,9 @@ class MainActivity : SimpleActivity() {
 
         setupTabs()
         Contact.sorting = config.sorting
+
+        // Preload contacts in background for better performance
+        preloadContacts()
     }
 
     override fun onResume() {
@@ -640,6 +644,22 @@ class MainActivity : SimpleActivity() {
     }
 
     fun cacheContacts() {
+        // Use ContactCacheManager for efficient contact loading
+        val contactCache = ContactCacheManager.getInstance(this)
+
+        lifecycleScope.launchWhenStarted {
+            val contacts = contactCache.getContacts()
+            try {
+                cachedContacts.clear()
+                cachedContacts.addAll(contacts)
+            } catch (ignored: Exception) {
+                // Fallback to old method if cache fails
+                loadContactsFallback()
+            }
+        }
+    }
+
+    private fun loadContactsFallback() {
         val privateCursor = getMyContactsCursor(favoritesOnly = false, withPhoneNumbersOnly = true)
         ContactsHelper(this).getContacts(getAll = true, showOnlyContactsWithNumbers = true) { contacts ->
             if (SMT_PRIVATE !in config.ignoredContactSources) {
@@ -656,6 +676,11 @@ class MainActivity : SimpleActivity() {
             } catch (ignored: Exception) {
             }
         }
+    }
+
+    fun preloadContacts() {
+        // Preload contacts in background using ContactCacheManager
+        ContactCacheManager.getInstance(this).preloadContacts()
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
