@@ -795,9 +795,7 @@ class CallActivity : SimpleActivity() {
                 disableAllActionButtons()
                 @SuppressLint("SetTextI18n")
                 binding.callStatusLabel.text = "${callDuration.getFormattedDuration()} (${getString(R.string.call_ended)})"
-                Handler(mainLooper).postDelayed(3000) {
-                    safeFinishAndRemoveTask()
-                }
+                safeFinishAndRemoveTask()
             } else {
                 disableAllActionButtons()
                 binding.callStatusLabel.text = getString(R.string.call_ended)

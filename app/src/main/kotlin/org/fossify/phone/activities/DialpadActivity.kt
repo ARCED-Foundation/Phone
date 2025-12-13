@@ -646,26 +646,35 @@ class DialpadActivity : SimpleActivity() {
     private fun showOdkModeUI() {
         binding.odkModeIndicator?.visibility = View.VISIBLE
         binding.finishOdkButton?.visibility = View.VISIBLE
-        binding.finishOdkButton?.setOnClickListener {
-            returnToOdk()
+        // Set click listener only if not already set to avoid multiple listeners
+        if (binding.finishOdkButton?.tag != "listener_set") {
+            binding.finishOdkButton?.setOnClickListener {
+                returnToOdk()
+            }
+            binding.finishOdkButton?.tag = "listener_set"
         }
     }
 
     private fun returnToOdk() {
-        if (!CallManager.isOdkSessionActive()) return
+        if (!CallManager.isOdkSessionActive()) {
+            android.util.Log.w("ODK_INTEGRATION", "No active ODK session, finishing activity")
+            setResult(RESULT_CANCELED)
+            finish()
+            return
+        }
 
         try {
             // End ODK session and get concatenated value
             val concatenatedValue = CallManager.getConcatenatedOdkValue()
             CallManager.endOdkSession()
 
-            // Reset ODK session flag
+            // Reset ODK session flag immediately to prevent multiple calls
             isOdkSession = false
 
             // Persist full concatenated value for next session fallback
             saveLastOdkValue(concatenatedValue)
 
-// Create return intent with String extra named "value" (ODK standard)
+            // Create return intent with String extra named "value" (ODK standard)
             val returnIntent = Intent().apply {
                 putExtra("value", concatenatedValue)
             }
@@ -677,7 +686,7 @@ class DialpadActivity : SimpleActivity() {
 
         } catch (e: Exception) {
             android.util.Log.e("ODK_INTEGRATION", "Error returning data to ODK", e)
-            Toast.makeText(this, "Error: Cannot save call data", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Error: Cannot save call data", Toast.LENGTH_SHORT).show()
             setResult(RESULT_CANCELED)
             finish()
         }

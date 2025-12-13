@@ -27,6 +27,9 @@ import org.fossify.phone.extensions.saveOdkSession
 import org.fossify.phone.extensions.clearOdkSessionState
 import org.fossify.phone.extensions.ODK_SESSION_TIMEOUT_MS
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArraySet
 import org.fossify.phone.utils.PerformanceMonitor
@@ -428,26 +431,39 @@ class CallManager {
         }
 
         private fun sendOdkReturnBroadcast(session: ODKSession) {
-            val payloadIntent = Intent("org.fossify.phone.ODK_RETURN_FULL").apply {
-                putExtra("value", getConcatenatedOdkValue())
-                putExtra("total_duration", session.totalDuration)
-                putExtra("successful_calls", session.successfulCallCount)
-                putExtra("field_id", session.fieldId)
-                putExtra("form_valid", true)
+            // Extract data that doesn't require background processing
+            val concatenatedValue = getConcatenatedOdkValue()
+            val totalDuration = session.totalDuration
+            val successfulCalls = session.successfulCallCount
+            val fieldId = session.fieldId
+            val callingPackage = session.callingPackage
 
+            // Move JSON serialization to background thread to avoid UI blocking
+            GlobalScope.launch(Dispatchers.IO) {
                 val recordsJson = kotlinx.serialization.json.Json.encodeToString(session.callRecords)
-                putExtra("records", recordsJson)
-            }
 
-            odkSessionContext?.sendBroadcast(payloadIntent)
-            android.util.Log.d("CallManager", "ODK return broadcast broadcasted for local handlers")
+                // Create and send broadcast on main thread
+                mainHandler.post {
+                    val payloadIntent = Intent("org.fossify.phone.ODK_RETURN_FULL").apply {
+                        putExtra("value", concatenatedValue)
+                        putExtra("total_duration", totalDuration)
+                        putExtra("successful_calls", successfulCalls)
+                        putExtra("field_id", fieldId)
+                        putExtra("form_valid", true)
+                        putExtra("records", recordsJson)
+                    }
 
-            session.callingPackage?.let { callingPackage ->
-                android.util.Log.d("CallManager", "Sending ODK return broadcast to $callingPackage")
-                val externalIntent = Intent(payloadIntent).apply {
-                    setPackage(callingPackage)
+                    odkSessionContext?.sendBroadcast(payloadIntent)
+                    android.util.Log.d("CallManager", "ODK return broadcast broadcasted for local handlers")
+
+                    callingPackage?.let { pkg ->
+                        android.util.Log.d("CallManager", "Sending ODK return broadcast to $pkg")
+                        val externalIntent = Intent(payloadIntent).apply {
+                            setPackage(pkg)
+                        }
+                        odkSessionContext?.sendBroadcast(externalIntent)
+                    }
                 }
-                odkSessionContext?.sendBroadcast(externalIntent)
             }
         }
 
