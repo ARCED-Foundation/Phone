@@ -50,7 +50,18 @@
       "Bash(git checkout:*)",
       "Bash(keytool:*)",
       "Bash(unzip:*)",
-      "Bash(jarsigner:*)"
+      "Bash(jarsigner:*)",
+      "Bash(\"C:\\Program Files\\Android\\Android Studio\\jbr\\bin\\jar.exe\":*)",
+      "Bash(\"C:\\Program Files\\Android\\Android Studio\\jbr\\bin\\aapt.exe\" dump badging AndroidManifest.xml)",
+      "Bash(\"C:\\Program Files\\7-Zip\\7z.exe\":*)",
+      "Bash(adb:*)",
+      "Bash(\"C:\\Program Files\\Android\\Android Studio\\jbr\\bin\\jarsigner.exe\":*)",
+      "Bash(zipinfo:*)",
+      "Bash(ls:*)",
+      "Bash(where:*)",
+      "Bash(\"C:\\Users\\Mehrab Ali\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe\" install -r app/build/outputs/apk/core/release/phone-19-core-release.apk)",
+      "Bash(\"C:\\Users\\Mehrab Ali\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe\" install -r app/build/outputs/apk/core/debug/phone-19-core-debug.apk)",
+      "Bash(\"C:/Users/Mehrab Ali/AppData/Local/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/core/release/phone-19-core-release.apk)"
     ],
     "deny": [],
     "ask": []
