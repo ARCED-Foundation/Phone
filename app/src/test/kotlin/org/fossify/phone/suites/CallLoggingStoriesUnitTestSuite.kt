@@ -4,7 +4,6 @@ import org.fossify.phone.activities.AdminSetupActivityTest
 import org.fossify.phone.dialogs.SurveyDataCollectionDialogTest
 import org.fossify.phone.helpers.AdminSettingsHelperTest
 import org.fossify.phone.helpers.CallLoggerTest
-import org.fossify.phone.helpers.CallManagerTest
 import org.fossify.phone.helpers.CallSyncManagerIntegrationTest
 import org.fossify.phone.helpers.IntentExtrasHelperTest
 import org.fossify.phone.helpers.ManualCallRecordHelperTest
@@ -19,7 +18,6 @@ import org.junit.runners.Suite
 
 @RunWith(Suite::class)
 @Suite.SuiteClasses(
-    CallManagerTest::class,
     CallLoggerTest::class,
     ManualCallRecordHelperTest::class,
     CallSyncManagerIntegrationTest::class,

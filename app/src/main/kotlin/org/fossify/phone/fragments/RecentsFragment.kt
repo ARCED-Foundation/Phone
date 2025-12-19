@@ -46,7 +46,7 @@ class RecentsFragment(
     // Search caching optimization
     private val searchCache = mutableMapOf<String, List<CallLogItem>>()
     private var lastSearchTime = 0L
-    private val searchDebounceDelay = 300L // 300ms debounce
+    private val searchDebounceDelay = 500L // 500ms debounce
 
     override fun onFinishInflate() {
         super.onFinishInflate()

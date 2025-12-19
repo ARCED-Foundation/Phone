@@ -21,7 +21,7 @@ const val ODK_SESSION_IS_ACTIVE_KEY = "odk_session_is_active"
 const val ODK_SESSION_VARIANT_KEY = "odk_session_variant"
 
 // Session timeout constants (in milliseconds)
-const val ODK_SESSION_TIMEOUT_MS = 300000L // 5 minutes in milliseconds
+const val ODK_SESSION_TIMEOUT_MS = 600000L // 10 minutes in milliseconds
 const val ODK_SESSION_CHECK_INTERVAL_MS = 30000L // 30 seconds in milliseconds
 
 // Call tracking constants

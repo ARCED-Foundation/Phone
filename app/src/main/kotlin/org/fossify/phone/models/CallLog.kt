@@ -78,7 +78,22 @@ data class CallLog(
     val syncAttempts: Int = 0,
 
     @ColumnInfo(name = "last_sync_error")
-    val lastSyncError: String? = null
+    val lastSyncError: String? = null,
+
+    @ColumnInfo(name = "is_odk_call")
+    var isOdkCall: Boolean = false,
+
+    @ColumnInfo(name = "sync_deferred")
+    var syncDeferred: Boolean = false,
+
+    @ColumnInfo(name = "form_completed")
+    var formCompleted: Boolean = false,
+
+    @ColumnInfo(name = "form_attempted")
+    var formAttempted: Boolean = false,
+
+    @ColumnInfo(name = "odk_session_id")
+    var odkSessionId: String? = null
 ) {
     init {
         require(durationSeconds >= 0) { "Duration must be non-negative" }

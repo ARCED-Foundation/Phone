@@ -192,6 +192,22 @@ class SyncLogActivity : SimpleActivity() {
                 toast(R.string.sync_log_retry_enqueued)
                 return@launch
             }
+
+            // Check if this is a non-ODK call with incomplete metadata
+            if (!callLog.isOdkCall && !callLog.formCompleted && !callLog.synced) {
+                AlertDialog.Builder(this@SyncLogActivity)
+                    .setTitle("Complete Metadata")
+                    .setMessage("This call requires metadata completion before syncing. Complete the form now?")
+                    .setPositiveButton("Complete Metadata") { _, _ ->
+                        // Launch PostCallMetadataActivity for this call
+                        PostCallMetadataActivity.launch(this@SyncLogActivity, callLogId)
+                    }
+                    .setNegativeButton("Skip") { dialog, _ ->
+                        dialog.dismiss()
+                    }
+                    .show()
+                return@launch
+            }
             val config = resolvePersistedConfig()
             if (config == null) {
                 toast(R.string.sync_log_retry_missing_config)

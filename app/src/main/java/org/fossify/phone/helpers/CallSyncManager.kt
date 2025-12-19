@@ -58,6 +58,10 @@ class CallSyncManager private constructor(
     }
 
     suspend fun syncCallLog(callLog: CallLog, intent: Intent): Boolean = withContext(Dispatchers.IO) {
+        if (!callLog.isOdkCall && !callLog.formCompleted) {
+            syncLogHelper.logStatus(callLog, null, SyncLogStatus.PENDING, "Waiting for metadata form")
+            return@withContext false
+        }
         val intentConfig = intentExtrasHelper.extractOdkConfig(intent)
         val persistedConfig = resolvePersistedConfig()
         val odkConfig = intentConfig ?: persistedConfig

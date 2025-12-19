@@ -61,7 +61,10 @@
       "Bash(where:*)",
       "Bash(\"C:\\Users\\Mehrab Ali\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe\" install -r app/build/outputs/apk/core/release/phone-19-core-release.apk)",
       "Bash(\"C:\\Users\\Mehrab Ali\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe\" install -r app/build/outputs/apk/core/debug/phone-19-core-debug.apk)",
-      "Bash(\"C:/Users/Mehrab Ali/AppData/Local/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/core/release/phone-19-core-release.apk)"
+      "Bash(\"C:/Users/Mehrab Ali/AppData/Local/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/core/release/phone-19-core-release.apk)",
+      "Bash(wait:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

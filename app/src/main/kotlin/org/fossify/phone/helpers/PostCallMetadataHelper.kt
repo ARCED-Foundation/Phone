@@ -101,18 +101,39 @@ class PostCallMetadataHelper private constructor(
                 note = trimmedNote,
                 surveyCall = state.surveyCall
             )
-            if (!hasPending && updatedLog != null) {
-                createPendingSyncIfMissing(
-                    callLog = updatedLog,
-                    extrasJson = extrasJson.toString(),
-                    surveyCall = state.surveyCall,
-                    uniqueId = trimmedUniqueId,
-                    enumeratorId = trimmedEnumerator,
-                    note = trimmedNote
-                )
+
+            // Check variables for sync creation
+            val syncAlreadyExists = pendingSyncDao?.getByCallLog(callLogId) != null
+            val isFormCompleted = !trimmedUniqueId.isNullOrBlank() && !trimmedEnumerator.isNullOrBlank() && !trimmedNote.isNullOrBlank()
+
+            // Only create new sync if no pending sync exists and we have an updated log
+            // This prevents duplicate sync creation between CallService and PostCallMetadataHelper
+            if (updatedLog != null) {
+                android.util.Log.d("PostCallMetadataHelper", "Sync creation check - hasPending: $hasPending, syncAlreadyExists: $syncAlreadyExists, formCompleted: $isFormCompleted, callLogId: $callLogId")
+
+                // Only create sync if form is completed and no sync already exists
+                if (!syncAlreadyExists && !hasPending && isFormCompleted) {
+                    android.util.Log.d("PostCallMetadataHelper", "Creating new pending sync for completed form: $callLogId")
+                    createPendingSyncIfMissing(
+                        callLog = updatedLog,
+                        extrasJson = extrasJson.toString(),
+                        surveyCall = state.surveyCall,
+                        uniqueId = trimmedUniqueId,
+                        enumeratorId = trimmedEnumerator,
+                        note = trimmedNote
+                    )
+                } else {
+                    android.util.Log.d("PostCallMetadataHelper", "Skipping sync creation${if (!isFormCompleted) " - form not completed" else if (syncAlreadyExists) " - sync already exists" else " - has pending"}")
+                }
             }
 
-            WorkManagerHelper.enqueueOdkSyncWork(context, initialDelayMs = 0L)
+            // Ensure sync runs as soon as metadata is complete
+            if (isFormCompleted) {
+                android.util.Log.d("PostCallMetadataHelper", "Enqueuing sync work after form completion (hasPending=$hasPending, syncAlreadyExists=$syncAlreadyExists): $callLogId")
+                WorkManagerHelper.enqueueOdkSyncWork(context, initialDelayMs = 0L, forceNow = true)
+            } else {
+                android.util.Log.d("PostCallMetadataHelper", "Not enqueuing sync work - form not completed")
+            }
             true
         } catch (e: Exception) {
             false
@@ -130,6 +151,7 @@ class PostCallMetadataHelper private constructor(
         val payload = runCatching { JSONObject(pending.syncPayloadJson) }.getOrElse { JSONObject() }
         val dataObject = payload.optJSONObject(KEY_DATA) ?: JSONObject()
 
+        payload.remove("await_metadata")
         dataObject.put("survey_call", if (surveyCall) "yes" else "no")
         uniqueId?.let {
             dataObject.put("survey_id", it)

@@ -26,6 +26,7 @@ import org.fossify.phone.models.CallOutcome
 import org.fossify.phone.extensions.saveOdkSession
 import org.fossify.phone.extensions.clearOdkSessionState
 import org.fossify.phone.extensions.ODK_SESSION_TIMEOUT_MS
+import org.fossify.phone.utils.Logger
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +34,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArraySet
 import org.fossify.phone.utils.PerformanceMonitor
+import org.fossify.phone.work.WorkManagerHelper
 
 // inspired by https://github.com/Chooloo/call_manage
 class CallManager {
@@ -431,6 +433,8 @@ class CallManager {
         }
 
         private fun sendOdkReturnBroadcast(session: ODKSession) {
+            android.util.Log.d("CallManager", "Preparing ODK return broadcast for session: ${session.sessionStartTime}")
+
             // Extract data that doesn't require background processing
             val concatenatedValue = getConcatenatedOdkValue()
             val totalDuration = session.totalDuration
@@ -441,27 +445,38 @@ class CallManager {
             // Move JSON serialization to background thread to avoid UI blocking
             GlobalScope.launch(Dispatchers.IO) {
                 val recordsJson = kotlinx.serialization.json.Json.encodeToString(session.callRecords)
+                android.util.Log.d("CallManager", "Serialized ${session.callRecords.size} call records for ODK broadcast")
 
                 // Create and send broadcast on main thread
                 mainHandler.post {
-                    val payloadIntent = Intent("org.fossify.phone.ODK_RETURN_FULL").apply {
-                        putExtra("value", concatenatedValue)
-                        putExtra("total_duration", totalDuration)
-                        putExtra("successful_calls", successfulCalls)
-                        putExtra("field_id", fieldId)
-                        putExtra("form_valid", true)
-                        putExtra("records", recordsJson)
-                    }
-
-                    odkSessionContext?.sendBroadcast(payloadIntent)
-                    android.util.Log.d("CallManager", "ODK return broadcast broadcasted for local handlers")
-
-                    callingPackage?.let { pkg ->
-                        android.util.Log.d("CallManager", "Sending ODK return broadcast to $pkg")
-                        val externalIntent = Intent(payloadIntent).apply {
-                            setPackage(pkg)
+                    try {
+                        val payloadIntent = Intent("org.fossify.phone.ODK_RETURN_FULL").apply {
+                            putExtra("value", concatenatedValue)
+                            putExtra("total_duration", totalDuration)
+                            putExtra("successful_calls", successfulCalls)
+                            putExtra("field_id", fieldId)
+                            putExtra("form_valid", true)
+                            putExtra("records", recordsJson)
                         }
-                        odkSessionContext?.sendBroadcast(externalIntent)
+
+                        odkSessionContext?.sendBroadcast(payloadIntent)
+                        android.util.Log.d("CallManager", "ODK return broadcast sent successfully for local handlers")
+
+                        callingPackage?.let { pkg ->
+                            android.util.Log.d("CallManager", "Sending ODK return broadcast to calling package: $pkg")
+                            val externalIntent = Intent(payloadIntent).apply {
+                                setPackage(pkg)
+                            }
+                            odkSessionContext?.sendBroadcast(externalIntent)
+                        }
+
+                        // Use safe reset to prevent premature session cleanup
+                        android.util.Log.d("CallManager", "Performing safe ODK session reset after broadcast")
+                        safeResetOdkSession()
+                    } catch (e: Exception) {
+                        android.util.Log.e("CallManager", "Failed to send ODK return broadcast", e)
+                        // Still attempt to clean up session even if broadcast fails
+                        resetOdkSession()
                     }
                 }
             }
@@ -536,9 +551,9 @@ class CallManager {
 
         // ODK Session Management Methods
         fun initializeOdkSession(context: Context, phoneNumber: String?, existingValue: String?, variant: String?, fieldId: String? = null, callingPackage: String? = null, autoReturnDisconnect: Boolean = true) {
-    // Clear any existing session data to prevent overwrite
+    // Clear any existing session data to prevent overwrite, but preserve active call tracking
     odkSession?.callRecords?.let { _ -> odkSession = odkSession?.copy(callRecords = emptyList()) }
-    activeOdkCallTracking.clear()
+    // Don't clear activeOdkCallTracking here - preserve it for the current session
 
     odkSessionContext = context.applicationContext
     odkSession = ODKSession(
@@ -577,6 +592,86 @@ class CallManager {
         }
 
         fun getActiveOdkCalls(): Map<String, OdkCallTrackingInfo> = activeOdkCallTracking
+
+        // Track pending ODK calls that need form completion
+        private val pendingOdkCalls = mutableSetOf<String>()
+
+        fun hasPendingOdkCalls(): Boolean = pendingOdkCalls.isNotEmpty()
+
+        fun trackPendingOdkCall(callId: String) {
+            pendingOdkCalls.add(callId)
+        }
+
+        fun completeOdkCall(callId: String) {
+            pendingOdkCalls.remove(callId)
+            // If no more pending ODK calls, clean up session
+            if (pendingOdkCalls.isEmpty()) {
+                odkSession = null
+                odkSessionContext = null
+                OdkIntentStateHolder.clear()
+            }
+        }
+
+        /**
+         * Enhanced ODK session validation with multiple checks
+         * Returns true if session is valid and can accept new calls
+         */
+        fun isValidOdkSession(): Boolean {
+            val session = odkSession ?: return false
+
+            // Check if session is active
+            if (!session.isActive) {
+                android.util.Log.d("CallManager", "ODK session validation: session is not active")
+                return false
+            }
+
+            // Check session timeout (10 minutes)
+            val timeSinceStart = System.currentTimeMillis() - session.sessionStartTime
+            if (timeSinceStart > ODK_SESSION_TIMEOUT_MS) {
+                android.util.Log.d("CallManager", "ODK session validation: session timed out (${timeSinceStart}ms)")
+                return false
+            }
+
+            // Check if intent state is fresh
+            val intentState = OdkIntentStateHolder.current()
+            if (!intentState.isFresh()) {
+                android.util.Log.d("CallManager", "ODK session validation: intent state is stale")
+                return false
+            }
+
+            // Validate context is still available
+            if (odkSessionContext == null) {
+                android.util.Log.d("CallManager", "ODK session validation: context is null")
+                return false
+            }
+
+            android.util.Log.d("CallManager", "ODK session validation: session is valid")
+            return true
+        }
+
+        /**
+         * Get comprehensive ODK session state for debugging and logging
+         */
+        fun getOdkSessionState(): String {
+            return when {
+                !isOdkSessionActive() -> "NO_SESSION"
+                !isValidOdkSession() -> "INVALID_SESSION"
+                activeOdkCallTracking.isNotEmpty() -> "ACTIVE_WITH_CALLS(${activeOdkCallTracking.size})"
+                pendingOdkCalls.isNotEmpty() -> "PENDING_FORMS(${pendingOdkCalls.size})"
+                else -> "ACTIVE_IDLE"
+            }
+        }
+
+        /**
+         * Check if ODK session is active and has valid context
+         * More reliable than just checking isActive flag
+         */
+        fun isOdkSessionReady(): Boolean {
+            if (!isOdkSessionActive()) return false
+            if (odkSessionContext == null) return false
+            if (!OdkIntentStateHolder.isStateValidAndFresh()) return false
+            return true
+        }
 
         fun addActiveOdkCall(callId: String, call: Call, phoneNumber: String, direction: CallDirection): OdkCallTrackingInfo {
             val startTimestamp = call.details.creationTimeMillis.takeIf { it > 0 } ?: System.currentTimeMillis()
@@ -629,6 +724,13 @@ class CallManager {
             odkSessionContext?.let { context ->
                 context.saveOdkSession(odkSession!!)
             }
+
+            // Trigger sync when ODK call records are added
+            if (odkSession?.callRecords?.isNotEmpty() == true) {
+                android.util.Log.d("CallManager", "Triggering sync for ODK calls with ${odkSession?.callRecords?.size} records")
+                WorkManagerHelper.enqueueOdkSyncWork(odkSessionContext!!, initialDelayMs = 0L, forceNow = true)
+            }
+
             return odkSession
         }
 
@@ -694,11 +796,83 @@ class CallManager {
         }
 
         fun resetOdkSession() {
+            android.util.Log.d("CallManager", "Resetting ODK session")
             odkSession = null
             activeOdkCallTracking.clear()
             odkSessionContext?.clearOdkSessionState()
             odkSessionContext = null
             OdkIntentStateHolder.clear()
+        }
+
+        /**
+         * Validates if the ODK session should persist based on current state
+         * and call activity. Returns true if session should be kept.
+         */
+        fun shouldOdkSessionPersist(): Boolean {
+            val session = odkSession ?: return false
+
+            // Check if session is still marked as active
+            if (!session.isActive) {
+                android.util.Log.d("CallManager", "ODK session persistence check: session is not active")
+                return false
+            }
+
+            // Check for session timeout (5 minutes)
+            val timeSinceStart = System.currentTimeMillis() - session.sessionStartTime
+            if (timeSinceStart > ODK_SESSION_TIMEOUT_MS) {
+                android.util.Log.d("CallManager", "ODK session persistence check: session timed out (${timeSinceStart}ms)")
+                return false
+            }
+
+            // Check if there are still active ODK calls
+            if (activeOdkCallTracking.isNotEmpty()) {
+                android.util.Log.d("CallManager", "ODK session persistence check: ${activeOdkCallTracking.size} active calls")
+                return true
+            }
+
+            android.util.Log.d("CallManager", "ODK session persistence check: no active calls, session can be reset")
+            return false
+        }
+
+        /**
+         * Synchronize intent state with session state to prevent stale state issues
+         */
+        fun syncOdkIntentState() {
+            if (isOdkSessionActive()) {
+                val intentState = OdkIntentStateHolder.current()
+                if (!intentState.isFresh()) {
+                    Logger.callDetection("Stale intent detected, keeping session active")
+                    return
+                }
+            } else {
+                // Clear if no active session
+                OdkIntentStateHolder.clear()
+            }
+        }
+
+        /**
+         * Safe state reset with validation before state reset
+         */
+        fun safeStateReset(): Boolean {
+            val shouldKeepSession = shouldOdkSessionPersist()
+            if (!shouldKeepSession) {
+                OdkIntentStateHolder.clear()
+                return true
+            }
+            return false
+        }
+
+        /**
+         * Safe ODK session reset that only clears if validation passes
+         */
+        fun safeResetOdkSession(): Boolean {
+            return if (shouldOdkSessionPersist()) {
+                android.util.Log.d("CallManager", "ODK session validation passed, keeping session active")
+                false // Don't reset
+            } else {
+                resetOdkSession()
+                true // Successfully reset
+            }
         }
 
         fun updateOdkSessionState(isActive: Boolean = false) {
@@ -777,7 +951,17 @@ class CallManager {
             val durationMs = (endTimeMs - startTime).coerceAtLeast(0)
             val durationSeconds = durationMs / 1000.0
 
-            return CallTiming(durationSeconds, startTime, connectTime)
+            // Minimum duration threshold for valid calls (100ms)
+            val isValidDuration = durationSeconds >= 0.1
+
+            Logger.callDetection("Call duration calculation: duration=${String.format("%.3f", durationSeconds)}s, " +
+                    "valid=$isValidDuration, startTime=$startTime, endTime=$endTimeMs")
+
+            return CallTiming(
+                durationSeconds = if (isValidDuration) durationSeconds else 0.0,
+                startTimeMs = startTime,
+                connectTimeMs = connectTime
+            )
         }
 
         // Get failure reason for failed calls

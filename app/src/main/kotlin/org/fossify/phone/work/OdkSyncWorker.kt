@@ -109,6 +109,12 @@ class OdkSyncWorker(
             pendingSyncDao.delete(item.id)
             return ProcessResult(ItemResult.DROPPED, null)
         }
+        if (!callLog.isOdkCall && !callLog.formCompleted) {
+            val next = now.plusSeconds(300)
+            pendingSyncDao.update(item.withRetry(next, "metadata"))
+            syncLogHelper.logStatus(callLog, null, SyncLogStatus.PENDING, "Waiting for metadata form")
+            return ProcessResult(ItemResult.RETRY, next)
+        }
         if (processedCalls.contains(item.callLogId)) {
             pendingSyncDao.delete(item.id)
             syncLogHelper.logStatus(callLog, null, SyncLogStatus.FAILED, "Duplicate pending entry discarded")
@@ -143,6 +149,15 @@ class OdkSyncWorker(
                 syncLogHelper.logStatus(callLog, rebuilt, SyncLogStatus.PENDING, "Config restored, retrying")
                 return ProcessResult(ItemResult.RETRY, now)
             }
+        }
+        if (payload.optBoolean("await_metadata", false) && !callLog.formCompleted) {
+            val next = now.plusSeconds(300)
+            pendingSyncDao.update(item.copy(nextRetry = next, errorType = "metadata"))
+            syncLogHelper.logStatus(callLog, null, SyncLogStatus.PENDING, "Waiting for metadata form")
+            return ProcessResult(ItemResult.RETRY, next)
+        } else if (payload.optBoolean("await_metadata", false) && callLog.formCompleted) {
+            payload.remove("await_metadata")
+            pendingSyncDao.insert(item.reset().copy(syncPayloadJson = payload.toString(), nextRetry = now))
         }
 
         val payloadMap = payload.toMap()

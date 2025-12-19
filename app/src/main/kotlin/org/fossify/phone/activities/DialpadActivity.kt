@@ -559,6 +559,38 @@ class DialpadActivity : SimpleActivity() {
     }
 
     // ODK Integration Methods
+    /**
+     * Creates a basic ODK config from intent extras when full configuration is missing
+     * This allows partial ODK sessions to still create sync records
+     */
+    private fun createBasicOdkConfigFromIntent(intent: Intent): IntentExtrasHelper.OdkConfig? {
+        val extras = intent.extras ?: return null
+
+        // Check if we have ODK indicators
+        val hasOdkCallFlag = extras.getString("odk_call")?.toBooleanStrictOrNull() == true
+        val hasInstanceId = extras.getString("odkCollectInstanceId") != null
+
+        if (!hasOdkCallFlag && !hasInstanceId) {
+            android.util.Log.d("ODK_INTEGRATION", "No ODK indicators found in intent, skipping basic config creation")
+            return null
+        }
+
+        android.util.Log.d("ODK_INTEGRATION", "Creating basic ODK config from intent (hasOdkCallFlag: $hasOdkCallFlag, hasInstanceId: $hasInstanceId)")
+
+        // Use extracted values if available, otherwise generate placeholders
+        val baseUrl = extras.getString("centralBaseUrl") ?: "https://central.getodk.org"
+        val projectId = extras.getString("centralProjectId") ?: "project_${System.currentTimeMillis()}"
+        val datasetName = extras.getString("centralDatasetName") ?: "phone_calls_${System.currentTimeMillis()}"
+
+        return IntentExtrasHelper.OdkConfig(
+            baseUrl = baseUrl,
+            projectId = projectId,
+            datasetName = datasetName,
+            instanceId = extras.getString("odkCollectInstanceId"),
+            phoneNumber = extras.getString("phoneNumber") ?: extras.getString("phone")
+        )
+    }
+
     private fun handleOdkIntent() {
         android.util.Log.d("ODK_INTEGRATION", "handleOdkIntent called with intent: $intent")
 

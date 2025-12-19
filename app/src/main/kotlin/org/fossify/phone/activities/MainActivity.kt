@@ -12,6 +12,8 @@ import android.graphics.drawable.LayerDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.provider.Settings
+import android.view.LayoutInflater
+import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -22,6 +24,9 @@ import androidx.viewpager.widget.ViewPager
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import me.grantland.widget.AutofitHelper
 import org.fossify.commons.dialogs.ChangeViewTypeDialog
 import org.fossify.commons.dialogs.ConfirmationDialog
@@ -49,10 +54,13 @@ import org.fossify.phone.fragments.RecentsFragment
 import org.fossify.phone.services.CallSyncService
 import org.fossify.phone.helpers.ContactCacheManager
 import org.fossify.phone.helpers.OPEN_DIAL_PAD_AT_LAUNCH
+import org.fossify.phone.helpers.AdminSettingsHelper
 import org.fossify.phone.helpers.RecentsHelper
 import org.fossify.phone.helpers.SyncStatusTracker
 import org.fossify.phone.helpers.tabsList
+import org.fossify.phone.helpers.CallManager
 import org.fossify.phone.models.Events
+import org.fossify.phone.database.AppDatabase
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -68,6 +76,7 @@ class MainActivity : SimpleActivity() {
     private var storedStartNameWithSurname = false
     var cachedContacts = ArrayList<Contact>()
     private var syncStatusJob: Job? = null
+    private var credentialsCheckJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -129,17 +138,49 @@ class MainActivity : SimpleActivity() {
             return
         }
 
-        try {
-            SurveyDataCollectionActivity.launchPendingIfAny(this)
-        } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Failed to launch survey data collection", e)
-            // Don't crash the app, just log the error and continue
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // Enhanced ODK state checking to prevent forms for ODK calls
+                val hasPendingOdkCalls = CallManager.hasPendingOdkCalls()
+                val isOdkSessionActive = CallManager.isOdkSessionActive()
+                val isOdkSessionReady = CallManager.isOdkSessionReady()
+                val odkSessionState = CallManager.getOdkSessionState()
+
+                android.util.Log.d("MainActivity", "Form trigger check - ODK State: $odkSessionState, hasPending: $hasPendingOdkCalls, sessionActive: $isOdkSessionActive, sessionReady: $isOdkSessionReady")
+
+                // Check if there are calls that need PostCallMetadataActivity form
+                val db = AppDatabase.getInstance(this@MainActivity)
+                val callNeedingForm = db.callLogDao().getCallNeedingForm()
+                val callWithIncompleteForm = db.callLogDao().getCallWithIncompleteForm()
+
+                // Only launch survey if no pending ODK calls and no valid ODK session
+                // AND no pending calls that need PostCallMetadataActivity form
+                if (!hasPendingOdkCalls && !isOdkSessionReady && callNeedingForm == null && callWithIncompleteForm == null) {
+                    android.util.Log.d("MainActivity", "Launching survey data collection - no ODK activity detected and no calls needing form")
+                    SurveyDataCollectionActivity.launchPendingIfAny(this@MainActivity)
+                } else {
+                    android.util.Log.d("MainActivity", "Skipping survey data collection - ODK activity detected${if (callNeedingForm != null) " or calls needing PostCallMetadataActivity form" else if (callWithIncompleteForm != null) " or calls with incomplete form" else ""}")
+
+                    // If there are calls with incomplete forms, show a notification
+                    callWithIncompleteForm?.let { call ->
+                        withContext(Dispatchers.Main) {
+                            showIncompleteFormNotification(call)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Failed to launch survey data collection", e)
+                // Don't crash the app, just log the error and continue
+            }
         }
 
         updateMenuColors()
         val properPrimaryColor = getProperPrimaryColor()
         val dialpadIcon = resources.getColoredDrawableWithColor(R.drawable.ic_dialpad_vector, properPrimaryColor.getContrastColor())
         binding.mainDialpadButton.setImageDrawable(dialpadIcon)
+
+        // Check credentials status
+        checkCredentialsStatus()
 
         updateTextColors(binding.mainHolder)
         setupTabColors()
@@ -214,6 +255,7 @@ class MainActivity : SimpleActivity() {
         super.onDestroy()
         EventBus.getDefault().unregister(this)
         stopSyncStatusObserver()
+        credentialsCheckJob?.cancel()
     }
 
     private fun refreshMenuItems() {
@@ -392,7 +434,7 @@ class MainActivity : SimpleActivity() {
     }
 
     private fun initFragments() {
-        binding.viewPager.offscreenPageLimit = 2
+        binding.viewPager.offscreenPageLimit = 1
         binding.viewPager.addOnPageChangeListener(object : ViewPager.OnPageChangeListener {
             override fun onPageScrollStateChanged(state: Int) {}
 
@@ -743,6 +785,72 @@ class MainActivity : SimpleActivity() {
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Unable to open sync logs", e)
             toast(R.string.connection_failed)
+        }
+    }
+
+    private fun showIncompleteFormNotification(call: org.fossify.phone.models.CallLog) {
+        android.util.Log.d("MainActivity", "Showing incomplete form notification for call: ${call.callLogId}")
+
+        // Show a snackbar notification about the incomplete form
+        val snackbar = Snackbar.make(
+            binding.mainHolder,
+            getString(R.string.incomplete_form_message, call.phoneNumber ?: "Unknown number"),
+            Snackbar.LENGTH_INDEFINITE
+        ).setAction(R.string.complete_form) {
+            // Launch the PostCallMetadataActivity for this call
+            PostCallMetadataActivity.launch(this, call.callLogId)
+        }
+
+        // Style the snackbar to match the app theme
+        snackbar.setBackgroundTint(getProperBackgroundColor().darkenColor())
+        snackbar.setTextColor(getProperTextColor())
+        snackbar.setActionTextColor(getProperPrimaryColor())
+
+        // Show the snackbar
+        snackbar.show()
+    }
+
+    private fun checkCredentialsStatus() {
+        credentialsCheckJob?.cancel()
+        credentialsCheckJob = lifecycleScope.launchWhenStarted {
+            val adminHelper = AdminSettingsHelper(this@MainActivity)
+            val hasValidCredentials = adminHelper.hasValidCredentials()
+
+            android.util.Log.d("MainActivity", "Credentials status check - hasValidCredentials: $hasValidCredentials")
+
+            if (!hasValidCredentials) {
+                showCredentialsBanner()
+            } else {
+                hideCredentialsBanner()
+            }
+        }
+    }
+
+    private var credentialsBannerView: View? = null
+
+    private fun showCredentialsBanner() {
+        android.util.Log.d("MainActivity", "Showing credentials status banner")
+
+        // Remove existing banner if present
+        hideCredentialsBanner()
+
+        // Inflate and show custom banner
+        val bannerView = LayoutInflater.from(this).inflate(R.layout.layout_credentials_banner, binding.mainHolder, false)
+        val clickTarget = bannerView.findViewById<View>(R.id.credentials_banner_content)
+        val navigateToCredentials: (View) -> Unit = {
+            launchAdminSettings()
+        }
+        bannerView.setOnClickListener(navigateToCredentials)
+        clickTarget?.setOnClickListener(navigateToCredentials)
+        binding.mainHolder.addView(bannerView, 0) // Add at top
+        credentialsBannerView = bannerView
+    }
+
+    private fun hideCredentialsBanner() {
+        android.util.Log.d("MainActivity", "Hiding credentials status banner")
+        credentialsBannerView?.let { view ->
+            binding.mainHolder.removeView(view)
+            credentialsBannerView = null
         }
     }
 }

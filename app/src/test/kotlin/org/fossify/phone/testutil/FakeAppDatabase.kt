@@ -3,6 +3,7 @@ package org.fossify.phone.testutil
 import androidx.room.DatabaseConfiguration
 import androidx.room.InvalidationTracker
 import androidx.sqlite.db.SupportSQLiteOpenHelper
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import java.time.Instant
 import java.util.UUID
@@ -63,8 +64,12 @@ class InMemoryCallLogDao : CallLogDao {
 
     override suspend fun getById(id: UUID): CallLog? = items.firstOrNull { it.callLogId == id }
 
-    override suspend fun getRecentCallCount(phoneNumber: String, windowStart: Long): Int {
-        return items.count { it.phoneNumber == phoneNumber && it.callStartUtc.toEpochMilli() >= windowStart }
+    override suspend fun getRecentCallCount(phoneNumber: String, windowStart: Long, isOdkCall: Boolean): Int {
+        return items.count {
+            it.phoneNumber == phoneNumber &&
+                it.callStartUtc.toEpochMilli() >= windowStart &&
+                it.isOdkCall == isOdkCall
+        }
     }
 
     override suspend fun markAsSynced(id: UUID) {
@@ -106,6 +111,55 @@ class InMemoryCallLogDao : CallLogDao {
                 lastSyncError = null
             )
         )
+    }
+
+    override suspend fun updatePostCallMetadata(
+        id: UUID,
+        enumeratorId: String?,
+        surveyId: String?,
+        additionalNotes: String?,
+        extrasJson: String
+    ) {
+        val current = getById(id) ?: return
+        insertCallLog(
+            current.copy(
+                enumeratorId = enumeratorId,
+                surveyId = surveyId,
+                additionalNotes = additionalNotes,
+                extrasJson = extrasJson,
+                synced = false,
+                lastSyncError = null
+            )
+        )
+    }
+
+    override fun observeLatestSyncError() = flowOf(items.maxByOrNull { it.callStartUtc }?.lastSyncError)
+
+    override suspend fun updateLastSyncError(id: UUID, error: String?) {
+        val current = getById(id) ?: return
+        insertCallLog(current.copy(lastSyncError = error))
+    }
+
+    override suspend fun getCallNeedingForm(): CallLog? =
+        items.filter { !it.isOdkCall && !it.formCompleted && !it.synced }.minByOrNull { it.callStartUtc }
+
+    override suspend fun markFormCompleted(id: UUID) {
+        val current = getById(id) ?: return
+        insertCallLog(current.copy(formCompleted = true))
+    }
+
+    override suspend fun markFormAttempted(id: UUID) {
+        val current = getById(id) ?: return
+        insertCallLog(current.copy(formAttempted = true))
+    }
+
+    override suspend fun getCallWithIncompleteForm(): CallLog? =
+        items.filter { !it.isOdkCall && !it.formCompleted && it.formAttempted && !it.synced }
+            .minByOrNull { it.callStartUtc }
+
+    override suspend fun resetFormState(id: UUID) {
+        val current = getById(id) ?: return
+        insertCallLog(current.copy(formAttempted = false, formCompleted = false))
     }
 
     fun clear() = items.clear()
@@ -171,8 +225,14 @@ class InMemoryPendingSyncDao : PendingSyncDao {
 
     override suspend fun count(): Int = items.size
 
+    override fun observePendingCount() = flowOf(items.size)
+
     override suspend fun getEarliestNextRetry(): Instant? =
         items.mapNotNull { it.nextRetry }.minOrNull()
+
+    override suspend fun resetAllForImmediateSync(now: Instant) {
+        items.replaceAll { it.copy(nextRetry = now, retryCount = 0, errorType = null) }
+    }
 
     fun clear() = items.clear()
 }

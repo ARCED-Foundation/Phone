@@ -1,8 +1,13 @@
 package org.fossify.phone.activities
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.view.MenuItem
+import android.view.ViewTreeObserver
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +34,7 @@ class CredentialsSetupActivity : SimpleActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setupEdgeToEdge()
         setContentView(binding.root)
         setSupportActionBar(binding.credentialsToolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
@@ -40,6 +46,20 @@ class CredentialsSetupActivity : SimpleActivity() {
 
         setupClickListeners()
         loadCurrentCredentials()
+    }
+
+    private fun setupEdgeToEdge() {
+        window.decorView.apply {
+            systemUiVisibility = systemUiVisibility or
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        }
+    }
+
+    private fun setupKeyboardVisibilityListener() {
+        // Removed automatic password field focus that was interfering with user input
+        // The edge-to-edge setup and windowSoftInputMode in manifest handle keyboard visibility
     }
 
     private fun setupClickListeners() {
@@ -136,20 +156,82 @@ class CredentialsSetupActivity : SimpleActivity() {
             return
         }
 
+        // Show loading indicator
+        binding.btnTestConnection.isEnabled = false
+        binding.btnTestConnection.text = getString(R.string.testing_connection)
+
         lifecycleScope.launch(Dispatchers.IO) {
-            val success = adminSettingsHelper.validateCredentialsBeforeStorage(centralUrl, username, password)
-            runOnUiThread {
-                if (success) {
-                    Snackbar.make(binding.root, R.string.connection_successful, Snackbar.LENGTH_SHORT).show()
-                    credentialsTestVerified = true
-                    lastTestedUrl = centralUrl
-                    lastTestedUsername = username
-                    lastTestedPassword = password
-                } else {
-                    Snackbar.make(binding.root, R.string.connection_failed, Snackbar.LENGTH_LONG).show()
+            try {
+                // Get diagnostic info before testing
+                val diagnosticInfo = adminSettingsHelper.getDiagnosticInfo()
+
+                // Test the connection
+                val success = adminSettingsHelper.validateCredentialsBeforeStorage(centralUrl, username, password)
+
+                runOnUiThread {
+                    binding.btnTestConnection.isEnabled = true
+                    binding.btnTestConnection.text = getString(R.string.test_connection)
+
+                    if (success) {
+                        Snackbar.make(binding.root, R.string.connection_successful, Snackbar.LENGTH_SHORT).show()
+                        credentialsTestVerified = true
+                        lastTestedUrl = centralUrl
+                        lastTestedUsername = username
+                        lastTestedPassword = password
+                    } else {
+                        // Enhanced error reporting with detailed message
+                        val errorMessage = buildDetailedErrorMessage(centralUrl, diagnosticInfo)
+                        showDetailedConnectionError(errorMessage)
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    binding.btnTestConnection.isEnabled = true
+                    binding.btnTestConnection.text = getString(R.string.test_connection)
+
+                    val errorMessage = "Connection test failed: ${e.message}\n\nPlease check:\n• Internet connection\n• Server URL is correct\n• ODK Central server is running"
+                    showDetailedConnectionError(errorMessage)
                 }
             }
         }
+    }
+
+    private fun buildDetailedErrorMessage(baseUrl: String, diagnosticInfo: Map<String, String>): String {
+        return """
+            Connection Failed
+
+            Server: $baseUrl
+            Version: ${diagnosticInfo["client_version"]}
+            Time: ${java.text.SimpleDateFormat.getDateTimeInstance().format(java.util.Date())}
+
+            Troubleshooting:
+            1. Check if the URL is correct and accessible
+            2. Verify username and password are correct
+            3. Ensure ODK Central server is running
+            4. Check if the server supports the API endpoints:
+               • /v1/users/current
+               • /v1/projects
+            5. Verify network connectivity
+            6. Check server logs for more details
+
+            Supported endpoints tested with 15-second timeout.
+        """.trimIndent()
+    }
+
+    private fun showDetailedConnectionError(message: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Connection Failed")
+            .setMessage(message)
+            .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
+            .setNegativeButton("Copy Details") { dialog, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clip = android.content.ClipData.newPlainText("Connection Error", message)
+                clipboard.setPrimaryClip(clip)
+                Toast.makeText(this, "Details copied to clipboard", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .setCancelable(false)
+            .show()
     }
 
     private fun invalidateTestState() {

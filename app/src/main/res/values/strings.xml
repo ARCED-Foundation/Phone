@@ -153,6 +153,7 @@
     <string name="credentials_save_failed">Failed to save credentials</string>
     <string name="connection_successful">Connection successful</string>
     <string name="connection_failed">Connection failed. Check the base URL override (if set) and credentials.</string>
+    <string name="testing_connection">Testing Connection…</string>
     <string name="base_url_required_for_validation">Set a base URL override on the Admin screen before validating credentials.</string>
     <string name="enter_pin">Enter PIN</string>
     <string name="pin_protection">PIN protection</string>
@@ -186,6 +187,14 @@
     <string name="post_call_unique_id_required">Unique ID is required</string>
     <string name="post_call_enumerator_required">Enumerator ID is required</string>
     <string name="post_call_note_required">Note is required</string>
+
+    <!-- Incomplete Form Notification -->
+    <string name="incomplete_form_message">Incomplete form for call to %s. Complete the form to enable data synchronization.</string>
+    <string name="complete_form">Complete form</string>
+
+    <!-- Credentials Status Banner -->
+    <string name="credentials_not_set_message">ODK credentials not set. Configure credentials to enable data synchronization.</string>
+    <string name="set_credentials">Set credentials</string>
     <string name="sync_logs">ODK sync logs</string>
     <string name="sync_logs_title">ODK sync log</string>
     <string name="sync_logs_header_time">Time</string>

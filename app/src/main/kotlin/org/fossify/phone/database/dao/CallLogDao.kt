@@ -18,8 +18,8 @@ interface CallLogDao {
     @Query("SELECT * FROM call_logs WHERE call_log_id = :id LIMIT 1")
     suspend fun getById(id: UUID): CallLog?
 
-    @Query("SELECT COUNT(*) FROM call_logs WHERE phone_number = :phoneNumber AND call_start_utc >= :windowStart")
-    suspend fun getRecentCallCount(phoneNumber: String, windowStart: Long): Int
+    @Query("SELECT COUNT(*) FROM call_logs WHERE phone_number = :phoneNumber AND call_start_utc >= :windowStart AND is_odk_call = :isOdkCall")
+    suspend fun getRecentCallCount(phoneNumber: String, windowStart: Long, isOdkCall: Boolean): Int
 
     @Query("UPDATE call_logs SET synced = 1, last_sync_error = NULL WHERE call_log_id = :id")
     suspend fun markAsSynced(id: UUID)
@@ -76,4 +76,19 @@ interface CallLogDao {
 
     @Query("UPDATE call_logs SET last_sync_error = :error WHERE call_log_id = :id")
     suspend fun updateLastSyncError(id: UUID, error: String?)
+
+    @Query("SELECT * FROM call_logs WHERE is_odk_call = 0 AND form_completed = 0 AND synced = 0 ORDER BY call_start_utc ASC LIMIT 1")
+    suspend fun getCallNeedingForm(): CallLog?
+
+    @Query("UPDATE call_logs SET form_completed = 1 WHERE call_log_id = :id")
+    suspend fun markFormCompleted(id: UUID)
+
+    @Query("UPDATE call_logs SET form_attempted = 1 WHERE call_log_id = :id")
+    suspend fun markFormAttempted(id: UUID)
+
+    @Query("SELECT * FROM call_logs WHERE is_odk_call = 0 AND form_completed = 0 AND form_attempted = 1 AND synced = 0 ORDER BY call_start_utc ASC LIMIT 1")
+    suspend fun getCallWithIncompleteForm(): CallLog?
+
+    @Query("UPDATE call_logs SET form_attempted = 0, form_completed = 0 WHERE call_log_id = :id")
+    suspend fun resetFormState(id: UUID)
 }

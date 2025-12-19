@@ -47,6 +47,10 @@ class PostCallMetadataActivity : SimpleActivity() {
 
     private fun launchDialog(id: UUID) {
         lifecycleScope.launch {
+            // Mark the form as attempted when the dialog is launched
+            val db = org.fossify.phone.database.AppDatabase.getInstance(applicationContext)
+            db.callLogDao().markFormAttempted(id)
+
             val draft = helper.loadState(id) ?: PostCallMetadataHelper.FormState(id)
             PostCallMetadataDialog(
                 activity = this@PostCallMetadataActivity,
@@ -54,7 +58,12 @@ class PostCallMetadataActivity : SimpleActivity() {
                 onSave = { formState ->
                     lifecycleScope.launch {
                         val success = withContext(Dispatchers.IO) {
-                            helper.save(id, formState)
+                            val saveSuccess = helper.save(id, formState)
+                            if (saveSuccess) {
+                                // Mark the form as completed in the database
+                                db.callLogDao().markFormCompleted(id)
+                            }
+                            saveSuccess
                         }
                         if (!success) {
                             toast(R.string.survey_data_missing_call_log)
